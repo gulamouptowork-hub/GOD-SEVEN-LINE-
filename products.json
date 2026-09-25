@@ -1,0 +1,50 @@
+[
+  {
+    "id": "tee",
+    "name": "T-shirt Seven",
+    "category": "T-shirts",
+    "color": "Verde",
+    "image": "IMG-20260617-WA0006(1).jpg",
+    "tag": "ESSENCIAL"
+  },
+  {
+    "id": "polo",
+    "name": "Polo Seven",
+    "category": "Polos",
+    "color": "Rosa / Vermelho",
+    "image": "IMG-20260617-WA0008(1).jpg",
+    "tag": "IDENTIDADE"
+  },
+  {
+    "id": "custom",
+    "name": "A tua estampa",
+    "category": "Personalizados",
+    "color": "T-shirts e sacolas",
+    "image": "IMG-20260708-WA0010(1).jpg",
+    "tag": "FEITO À TUA MEDIDA"
+  },
+  {
+    "id": "street",
+    "name": "Seven Street Tee",
+    "category": "T-shirts",
+    "color": "Branco",
+    "image": "IMG_20260829_163923_927.webp",
+    "tag": "STREET EDITION"
+  },
+  {
+    "id": "black",
+    "name": "Seven Signature",
+    "category": "Polos",
+    "color": "Preto",
+    "image": "IMG_20260829_163739_990.webp",
+    "tag": "SIGNATURE"
+  },
+  {
+    "id": "canvas",
+    "name": "Sacola Personalizada",
+    "category": "Personalizados",
+    "color": "Natural",
+    "image": "img_1788013265582.jpg",
+    "tag": "CRIA A TUA"
+  }
+]
