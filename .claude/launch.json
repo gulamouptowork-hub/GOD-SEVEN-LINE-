@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gsl",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/serve.js"],
+      "port": 4173,
+      "autoPort": true
+    }
+  ]
+}

@@ -1,0 +1,357 @@
+[
+  {
+    "id": "t-shirt-seven",
+    "slug": "t-shirt-seven",
+    "name": "T-shirt Seven",
+    "category": "t-shirts",
+    "productType": "T-shirt",
+    "description": "T-shirt verde com a assinatura seVen LINE bordada ao peito. Uma peça para fazer parte da tua história.",
+    "basePrice": 1250,
+    "status": "active",
+    "featured": true,
+    "orderMode": "cart",
+    "tag": "ESSENCIAL",
+    "createdAt": null,
+    "images": [
+      {
+        "src": "tee-verde-modelo",
+        "alt": "T-shirt Seven verde vestida, vista de frente"
+      },
+      {
+        "src": "tee-verde-detalhe",
+        "alt": "Detalhe do bordado seVen LINE na T-shirt Seven verde"
+      }
+    ],
+    "variants": [
+      {
+        "id": "t-shirt-seven-verde-s",
+        "color": "Verde",
+        "size": "S",
+        "stock": 4,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "t-shirt-seven-verde-m",
+        "color": "Verde",
+        "size": "M",
+        "stock": 8,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "t-shirt-seven-verde-l",
+        "color": "Verde",
+        "size": "L",
+        "stock": 6,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "t-shirt-seven-verde-xl",
+        "color": "Verde",
+        "size": "XL",
+        "stock": 2,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "t-shirt-seven-verde-xxl",
+        "color": "Verde",
+        "size": "XXL",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      }
+    ]
+  },
+  {
+    "id": "polo-seven",
+    "slug": "polo-seven",
+    "name": "Polo Seven",
+    "category": "polos",
+    "productType": "Polo",
+    "description": "Polo com identidade Seven: bordado seVen ao peito e o número 3 na manga. Disponível em rosa e vermelho.",
+    "basePrice": 1500,
+    "status": "active",
+    "featured": true,
+    "orderMode": "cart",
+    "tag": "IDENTIDADE",
+    "createdAt": "2026-09-20T10:00:00.000Z",
+    "images": [
+      {
+        "src": "polos-rosa-vermelho",
+        "alt": "Duas jovens com polos Seven rosa e vermelho"
+      },
+      {
+        "src": "polos-grupo",
+        "alt": "Grupo a vestir polos God Seven Line rosa e preto"
+      }
+    ],
+    "variants": [
+      {
+        "id": "polo-seven-rosa-s",
+        "color": "Rosa",
+        "size": "S",
+        "stock": 3,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-rosa-m",
+        "color": "Rosa",
+        "size": "M",
+        "stock": 5,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-rosa-l",
+        "color": "Rosa",
+        "size": "L",
+        "stock": 1,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-rosa-xl",
+        "color": "Rosa",
+        "size": "XL",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-rosa-xxl",
+        "color": "Rosa",
+        "size": "XXL",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-vermelho-s",
+        "color": "Vermelho",
+        "size": "S",
+        "stock": 2,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-vermelho-m",
+        "color": "Vermelho",
+        "size": "M",
+        "stock": 4,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-vermelho-l",
+        "color": "Vermelho",
+        "size": "L",
+        "stock": 4,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-vermelho-xl",
+        "color": "Vermelho",
+        "size": "XL",
+        "stock": 3,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "polo-seven-vermelho-xxl",
+        "color": "Vermelho",
+        "size": "XXL",
+        "stock": 1,
+        "priceOverride": null,
+        "sku": null
+      }
+    ]
+  },
+  {
+    "id": "seven-signature",
+    "slug": "seven-signature",
+    "name": "Seven Signature",
+    "category": "polos",
+    "productType": "Polo",
+    "description": "Polo preto da linha Signature, com estrelas e bordado seVen. Para um visual limpo e marcante.",
+    "basePrice": 1250,
+    "status": "active",
+    "featured": true,
+    "orderMode": "cart",
+    "tag": "SIGNATURE",
+    "createdAt": null,
+    "images": [
+      {
+        "src": "signature-preto",
+        "alt": "Polo Seven Signature preto vestido"
+      },
+      {
+        "src": "polos-grupo",
+        "alt": "Polo Seven Signature preto ao lado de polos rosa"
+      }
+    ],
+    "variants": [
+      {
+        "id": "seven-signature-preto-s",
+        "color": "Preto",
+        "size": "S",
+        "stock": 4,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-signature-preto-m",
+        "color": "Preto",
+        "size": "M",
+        "stock": 8,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-signature-preto-l",
+        "color": "Preto",
+        "size": "L",
+        "stock": 6,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-signature-preto-xl",
+        "color": "Preto",
+        "size": "XL",
+        "stock": 2,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-signature-preto-xxl",
+        "color": "Preto",
+        "size": "XXL",
+        "stock": 1,
+        "priceOverride": 1350,
+        "sku": null
+      }
+    ]
+  },
+  {
+    "id": "seven-street-tee",
+    "slug": "seven-street-tee",
+    "name": "Seven Street Tee",
+    "category": "t-shirts",
+    "productType": "T-shirt",
+    "description": "Streetwear God Seven Line com estampa de destaque nas costas e presença moçambicana.",
+    "basePrice": 1250,
+    "status": "active",
+    "featured": true,
+    "orderMode": "cart",
+    "tag": "STREET EDITION",
+    "createdAt": null,
+    "images": [
+      {
+        "src": "street-tee-ktm",
+        "alt": "Seven Street Tee preta com estampa nas costas"
+      }
+    ],
+    "variants": [
+      {
+        "id": "seven-street-tee-preto-s",
+        "color": "Preto",
+        "size": "S",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-street-tee-preto-m",
+        "color": "Preto",
+        "size": "M",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-street-tee-preto-l",
+        "color": "Preto",
+        "size": "L",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-street-tee-preto-xl",
+        "color": "Preto",
+        "size": "XL",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      },
+      {
+        "id": "seven-street-tee-preto-xxl",
+        "color": "Preto",
+        "size": "XXL",
+        "stock": 0,
+        "priceOverride": null,
+        "sku": null
+      }
+    ]
+  },
+  {
+    "id": "a-tua-estampa",
+    "slug": "a-tua-estampa",
+    "name": "A tua estampa",
+    "category": "personalizacao",
+    "productType": "Peça personalizada",
+    "description": "T-shirts e sacolas personalizadas com a tua arte, frase ou ideia. Partilha a tua ideia e combinamos os detalhes contigo.",
+    "basePrice": null,
+    "status": "active",
+    "featured": false,
+    "orderMode": "custom",
+    "tag": "FEITO À TUA MEDIDA",
+    "createdAt": null,
+    "images": [
+      {
+        "src": "personalizado-tee-sacola",
+        "alt": "T-shirt branca e sacola personalizadas com capas de álbuns"
+      }
+    ],
+    "variants": []
+  },
+  {
+    "id": "sacola-personalizada",
+    "slug": "sacola-personalizada",
+    "name": "Sacola Personalizada",
+    "category": "acessorios",
+    "productType": "Sacola",
+    "description": "A tua arte numa sacola resistente. Envia a ideia e nós tratamos da personalização.",
+    "basePrice": null,
+    "status": "active",
+    "featured": false,
+    "orderMode": "custom",
+    "tag": "CRIA A TUA",
+    "createdAt": null,
+    "images": [
+      {
+        "src": "sacola-rua",
+        "alt": "Sacola personalizada com a frase I am lost and I like it"
+      },
+      {
+        "src": "personalizado-tee-sacola",
+        "alt": "Sacola personalizada com capas de álbuns"
+      }
+    ],
+    "variants": [
+      {
+        "id": "sacola-personalizada-natural",
+        "color": "Natural",
+        "size": null,
+        "stock": null,
+        "priceOverride": null,
+        "sku": null
+      }
+    ]
+  }
+]
