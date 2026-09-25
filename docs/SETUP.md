@@ -193,6 +193,7 @@ O `vercel.json` já define o comando de build (`npm run build`) e a pasta public
    - `SUPABASE_URL` — o Project URL.
    - `SUPABASE_ANON_KEY` — a anon public key.
    - `WHATSAPP_NUMBER` — *opcional*, ver secção 5.
+   (Também funcionam os nomes que o Supabase sugere para Next.js: `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.)
 3. As variáveis só são lidas durante o build: depois de as alterares faz **Deployments → ⋯ → Redeploy**.
 
 No fim do build, o log indica o modo: `Modo: Supabase` ou `Modo: local (sem backend)`.

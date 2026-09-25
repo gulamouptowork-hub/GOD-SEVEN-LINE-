@@ -3,6 +3,7 @@
 //   node scripts/build.js --demo   → catálogo de demonstração (tests/fixtures/products.demo.json) — nunca publicar
 //   --out <pasta>                  → gera noutra pasta (usado nos testes)
 // Variáveis de ambiente: SUPABASE_URL, SUPABASE_ANON_KEY, WHATSAPP_NUMBER (ver docs/SETUP.md).
+// Também aceita os nomes do exemplo do Supabase: NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,11 +20,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outFlag = process.argv.indexOf('--out');
 const dist = outFlag > -1 ? path.resolve(process.argv[outFlag + 1]) : path.join(root, 'dist');
 const demo = process.argv.includes('--demo');
-const env = name => String(process.env[name] ?? '').trim();
+const env = (...names) => names.map(name => String(process.env[name] ?? '').trim()).find(Boolean) ?? '';
 
 const runtime = {
-  supabaseUrl: demo ? '' : env('SUPABASE_URL').replace(/\/$/, ''),
-  supabaseAnonKey: demo ? '' : env('SUPABASE_ANON_KEY'),
+  supabaseUrl: demo ? '' : env('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL').replace(/\/$/, ''),
+  supabaseAnonKey: demo ? '' : env('SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'),
   whatsappNumber: env('WHATSAPP_NUMBER').replace(/\D/g, ''),
   demo
 };

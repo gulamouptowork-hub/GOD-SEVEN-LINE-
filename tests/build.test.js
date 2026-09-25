@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const cleanEnv = { ...process.env, SUPABASE_URL: '', SUPABASE_ANON_KEY: '', WHATSAPP_NUMBER: '' };
+const cleanEnv = { ...process.env, SUPABASE_URL: '', SUPABASE_ANON_KEY: '', SUPABASE_PUBLISHABLE_KEY: '', NEXT_PUBLIC_SUPABASE_URL: '', NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: '', NEXT_PUBLIC_SUPABASE_ANON_KEY: '', WHATSAPP_NUMBER: '' };
 
 function build(args = [], env = cleanEnv) {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'gsl-build-'));
@@ -70,4 +70,12 @@ test('build recusa uma service_role key', () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /service_role/);
   fs.rmSync(out, { recursive: true, force: true });
+});
+
+test('aceita os nomes NEXT_PUBLIC_ do exemplo do Supabase', () => {
+  const site = build([], { ...cleanEnv, NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:9', NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_teste' });
+  const runtime = site.read('config/runtime.js');
+  assert.ok(runtime.includes('"supabaseUrl": "http://127.0.0.1:9"'), runtime);
+  assert.ok(runtime.includes('"supabaseAnonKey": "sb_publishable_teste"'), runtime);
+  fs.rmSync(site.out, { recursive: true, force: true });
 });

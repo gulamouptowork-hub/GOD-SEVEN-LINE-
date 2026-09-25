@@ -28,8 +28,8 @@ function screen(inner, { wide = false } = {}) {
 function renderSetup() {
   setTitle('Backend não configurado');
   const variables = [
-    ['SUPABASE_URL', runtime.supabaseUrl, 'URL do projeto (Project Settings → API)'],
-    ['SUPABASE_ANON_KEY', runtime.supabaseAnonKey, 'chave anon / public — nunca a service_role']
+    ['SUPABASE_URL', runtime.supabaseUrl, 'URL do projeto (Project Settings → Data API)'],
+    ['SUPABASE_ANON_KEY', runtime.supabaseAnonKey, 'chave pública: publishable (sb_publishable_…) ou anon — também aceite como SUPABASE_PUBLISHABLE_KEY; nunca a secret/service_role']
   ];
   screen(`
     <h1>Backend não configurado</h1>
