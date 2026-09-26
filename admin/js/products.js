@@ -3,9 +3,16 @@ import { SITE_CONFIG } from '/config/site.js';
 import { pluralize } from '/js/lib/format.js';
 import { escapeHTML } from '/js/lib/html.js';
 import {
-  PRODUCT_STATUSES, STORAGE_CLEANUP_NOTE, dbErrorMessage, filterProductRows, productDeleteConfirmation, productListRow
+  PRODUCT_STATUSES, SALE_STATES, STORAGE_CLEANUP_NOTE, dbErrorMessage, filterProductRows, productDeleteConfirmation, productListRow
 } from './logic.js';
-import { debounce, emptyHTML, loadInto, optionsHTML, productStatusChip, tableHTML, thumbHTML } from './ui.js';
+import { chipHTML, debounce, emptyHTML, loadInto, optionsHTML, productStatusChip, tableHTML, thumbHTML } from './ui.js';
+
+// Estado + como aparece na loja (carrinho, só WhatsApp…) com o que falta, para se ver logo o que corrigir.
+function statusCellHTML(row) {
+  const missing = row.sale.missing.filter(item => item.key !== 'status').map(item => item.short);
+  return `<div class="cell-stack">${productStatusChip(row.status)}${chipHTML(`Na loja: ${row.sale.short}`, row.sale.tone, ` title="${escapeHTML(row.sale.label)}"`)}`
+    + `${missing.length ? `<span class="cell-sub">Falta: ${escapeHTML(missing.join(', '))}</span>` : ''}</div>`;
+}
 
 function actionsHTML(row, deleting) {
   const href = `#/produtos/${encodeURIComponent(row.id)}`;
@@ -32,7 +39,7 @@ function productsTableHTML(rows, deleting) {
       { html: escapeHTML(row.categoryLabel || '—') },
       { html: row.basePrice === null ? '<span class="muted">Sem preço</span>' : escapeHTML(row.priceLabel) },
       { html: escapeHTML(row.stockLabel) },
-      { html: productStatusChip(row.status) },
+      { html: statusCellHTML(row) },
       { html: row.featured ? '<span class="featured">★ Sim</span>' : '<span class="muted">Não</span>' },
       { html: actionsHTML(row, deleting) }
     ])
@@ -44,6 +51,8 @@ export function renderProducts(ctx) {
   const initialStatus = PRODUCT_STATUSES.some(status => status.id === ctx.route.query.estado) ? ctx.route.query.estado : '';
   const categories = SITE_CONFIG.categories.map(category => ({ value: category.id, label: category.label }));
   const statuses = PRODUCT_STATUSES.map(status => ({ value: status.id, label: status.label }));
+  const saleOptions = SALE_STATES.map(state => ({ value: state.id, label: state.label }));
+  const initialSale = SALE_STATES.some(state => state.id === ctx.route.query.loja) ? ctx.route.query.loja : '';
 
   ctx.main.innerHTML = `
     <div class="page-head">
@@ -63,6 +72,10 @@ export function renderProducts(ctx) {
         <label for="products-status">Estado</label>
         <select id="products-status" name="status">${optionsHTML([{ value: '', label: 'Todos' }, ...statuses], initialStatus)}</select>
       </div>
+      <div class="field">
+        <label for="products-sale">Na loja</label>
+        <select id="products-sale" name="sale">${optionsHTML([{ value: '', label: 'Todas' }, ...saleOptions], initialSale)}</select>
+      </div>
     </form>
     <p class="result-count" aria-live="polite" data-count></p>
     <div data-region></div>`;
@@ -78,7 +91,7 @@ export function renderProducts(ctx) {
 
   function paint() {
     if (!rows) return;
-    const filters = { q: form.elements.q.value, category: form.elements.category.value, status: form.elements.status.value };
+    const filters = { q: form.elements.q.value, category: form.elements.category.value, status: form.elements.status.value, sale: form.elements.sale.value };
     const visible = filterProductRows(rows, filters);
     if (!rows.length) {
       region.innerHTML = emptyHTML('Sem produtos ainda.', '<p><a class="btn btn-primary" href="#/produtos/novo">Criar o primeiro produto</a></p>');

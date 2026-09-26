@@ -1,7 +1,8 @@
 // Lógica pura do painel /admin (sem DOM, sem supabase). Testada em tests/admin.test.js.
 // Os imports são RELATIVOS para funcionar tanto em Node como no browser (/admin/js/ → /js/lib/, /config/).
 import { SITE_CONFIG, categoryLabel, deliveryOption, orderStatusLabel } from '../../config/site.js';
-import { formatPrice } from '../../js/lib/format.js';
+import { isVariantConfigured, productAvailability } from '../../js/lib/catalog.js';
+import { formatPrice, isPrice } from '../../js/lib/format.js';
 import { normalizeSearch, slugify } from '../../js/lib/html.js';
 import { IMAGE_MANIFEST } from '../../js/lib/image-manifest.js';
 import { formatPhone, whatsappDigits } from '../../js/lib/validation.js';
@@ -249,6 +250,101 @@ export function settleStockEdits(original, raw, sent, saved) {
   return { original: nextOriginal, raw: nextRaw };
 }
 
+// ─── Produtos: como aparecem na loja ─────────────────────────────────────────
+// Usa as MESMAS regras da loja (js/lib/catalog.js → productAvailability): uma peça só tem
+// "Adicionar ao pedido" (carrinho) se estiver ativa, em modo "Pedido normal" e tiver pelo menos um
+// tamanho com preço e stock > 0. Caso contrário a loja mostra "Perguntar no WhatsApp" (ou ESGOTADO).
+
+export const SALE_STATES = Object.freeze([
+  Object.freeze({ id: 'cart', label: 'À venda com carrinho', short: 'Carrinho', tone: 'ok' }),
+  Object.freeze({ id: 'inquiry', label: 'Só “Perguntar no WhatsApp”', short: 'Só WhatsApp', tone: 'warn' }),
+  Object.freeze({ id: 'soldout', label: 'Esgotada', short: 'Esgotada', tone: 'danger' }),
+  Object.freeze({ id: 'custom', label: 'Personalização pelo WhatsApp', short: 'Personalização', tone: 'indigo' }),
+  Object.freeze({ id: 'hidden', label: 'Não aparece na loja', short: 'Oculta', tone: 'muted' })
+]);
+
+const countLabel = (count, singular, plural) => `${count} ${count === 1 ? singular : plural}`;
+
+// O que falta para a peça poder ir para o carrinho (textos para quem gere a loja).
+function cartMissing(product) {
+  const { variants } = product;
+  if (!variants.length) {
+    return [{ key: 'sizes', short: 'sem tamanhos', text: 'Não tem tamanhos. Em “Variantes”, usa “Gerar tamanhos” (ou acrescenta uma variante com tamanho “Único”).' }];
+  }
+  const missing = [];
+  const noPrice = variants.filter(variant => !isPrice(variant.priceOverride) && !isPrice(product.basePrice)).length;
+  const noStock = variants.filter(variant => !(Number.isInteger(variant.stock) && variant.stock >= 0)).length;
+  if (noPrice) {
+    missing.push(noPrice === variants.length
+      ? { key: 'price', short: 'sem preço', text: 'Falta o preço: preenche o “Preço base (MT)”.' }
+      : { key: 'price', short: 'sem preço', text: `${countLabel(noPrice, 'tamanho não tem', 'tamanhos não têm')} preço (nem preço base).` });
+  }
+  if (noStock) {
+    missing.push(noStock === variants.length
+      ? { key: 'stock', short: 'sem stock', text: 'Falta o stock: em “Variantes”, indica quantas unidades há de cada tamanho (0 = esgotado).' }
+      : { key: 'stock', short: 'sem stock', text: `${countLabel(noStock, 'tamanho não tem', 'tamanhos não têm')} stock indicado (ficam indisponíveis).` });
+  }
+  return missing;
+}
+
+// product: { status, orderMode, basePrice (número|null), variants: [{ stock (número|null), priceOverride (número|null) }] }
+export function saleReadiness(product) {
+  const normalized = {
+    status: product.status,
+    orderMode: product.orderMode === 'custom' ? 'custom' : 'cart',
+    basePrice: isPrice(product.basePrice) ? product.basePrice : null,
+    variants: (product.variants ?? []).map(variant => ({
+      stock: Number.isInteger(variant.stock) ? variant.stock : null,
+      priceOverride: isPrice(variant.priceOverride) ? variant.priceOverride : null
+    }))
+  };
+  const state = id => SALE_STATES.find(item => item.id === id);
+  const asActive = productAvailability({ ...normalized, status: 'active' });
+  const missing = asActive.state === 'unconfigured' ? cartMissing(normalized) : [];
+  if (normalized.status !== 'active') {
+    const status = normalized.status === 'archived' ? 'Está arquivada' : 'Está em rascunho';
+    return {
+      ...state('hidden'),
+      totalStock: asActive.totalStock,
+      missing: [{ key: 'status', short: 'não está ativa', text: `${status}: muda o estado para “Ativo” quando estiver pronta.` }, ...missing]
+    };
+  }
+  if (asActive.state === 'custom') return { ...state('custom'), totalStock: 0, missing: [] };
+  if (asActive.state === 'soldout') return { ...state('soldout'), totalStock: 0, missing: [] };
+  if (asActive.state === 'unconfigured') return { ...state('inquiry'), totalStock: 0, missing };
+  const unconfigured = normalized.variants.filter(variant => !isVariantConfigured(normalized, variant)).length;
+  return {
+    ...state('cart'),
+    totalStock: asActive.totalStock,
+    missing: [],
+    note: unconfigured ? `${countLabel(unconfigured, 'tamanho sem preço ou stock fica indisponível', 'tamanhos sem preço ou stock ficam indisponíveis')} para escolher.` : ''
+  };
+}
+
+// Linha do Supabase (snake_case) → saleReadiness.
+export function saleFromRow(row) {
+  return saleReadiness({
+    status: row.status,
+    orderMode: row.order_mode,
+    basePrice: row.base_price ?? null,
+    variants: (row.product_variants ?? []).map(variant => ({ stock: variant.stock ?? null, priceOverride: variant.price_override ?? null }))
+  });
+}
+
+// Formulário do editor (texto) → saleReadiness. Valores inválidos contam como "em falta".
+export function saleFromForm(form) {
+  const number = text => {
+    const parsed = parseWholeNumber(text);
+    return parsed.ok ? parsed.value : null;
+  };
+  return saleReadiness({
+    status: form.status,
+    orderMode: form.orderMode,
+    basePrice: number(form.basePrice),
+    variants: form.variants.map(variant => ({ stock: number(variant.stock), priceOverride: number(variant.priceOverride) }))
+  });
+}
+
 // ─── Produtos: lista ─────────────────────────────────────────────────────────
 
 export function productListRow(row) {
@@ -268,6 +364,7 @@ export function productListRow(row) {
     thumb: images[0]?.image_url ?? null,
     stock,
     stockLabel: stockSummaryLabel(stock),
+    sale: saleFromRow(row),
     searchText: normalizeSearch([row.name, row.slug, row.product_type, row.tag, categoryLabel(row.category)].filter(Boolean).join(' '))
   };
 }
@@ -283,10 +380,11 @@ export function productDeleteConfirmation(name) {
 
 export const STORAGE_CLEANUP_NOTE = ' Os ficheiros de imagem no Storage não foram removidos (podes apagá-los no painel do Supabase).';
 
-export function filterProductRows(rows, { q = '', category = '', status = '' } = {}) {
+export function filterProductRows(rows, { q = '', category = '', status = '', sale = '' } = {}) {
   const tokens = normalizeSearch(q).split(/\s+/).filter(Boolean);
   return rows.filter(row => (!category || row.category === category)
     && (!status || row.status === status)
+    && (!sale || row.sale?.id === sale)
     && tokens.every(token => row.searchText.includes(token)));
 }
 

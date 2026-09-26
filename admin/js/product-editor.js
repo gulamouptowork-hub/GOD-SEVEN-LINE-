@@ -9,10 +9,10 @@ import {
   IMAGE_FIELDS, LIMITS, ORDER_MODES, PRODUCT_STATUSES, QUICK_SIZES, STORAGE_CLEANUP_NOTE, VARIANT_FIELDS,
   applyNameChange, applySlugChange, applySyncResult, createKeyFactory, dbErrorMessage, emptyProductForm,
   formSnapshot, generateSizeRows, imageRowsFromDb, isUuid, moveItem, newImageEntry, newVariantEntry,
-  planSync, productDeleteConfirmation, productFormFromDb, productStatusLabel, sizeOptions, storagePathFromPublicUrl, validateImageFile,
+  planSync, productDeleteConfirmation, productFormFromDb, productStatusLabel, saleFromForm, sizeOptions, storagePathFromPublicUrl, validateImageFile,
   validateImageSource, validateImages, validateProductForm, validateVariants, variantRowsFromDb
 } from './logic.js';
-import { emptyHTML, loadInto, optionsHTML, productStatusChip, setFieldError } from './ui.js';
+import { chipHTML, emptyHTML, loadInto, optionsHTML, productStatusChip, setFieldError } from './ui.js';
 
 const FIELD_NAMES = ['name', 'slug', 'category', 'productType', 'basePrice', 'status', 'orderMode', 'tag', 'description', 'featured'];
 const fieldId = name => `product-${name}`;
@@ -143,6 +143,7 @@ function editorHTML(form) {
   const colors = [...new Set([...Object.keys(SITE_CONFIG.colorSwatches), ...form.variants.map(variant => variant.color).filter(Boolean)])];
   return `
   <form class="editor" novalidate data-editor>
+    <section class="panel sale-panel" aria-labelledby="editor-sale" data-sale></section>
     ${infoHTML(form)}
 
     <section class="panel" aria-labelledby="editor-images">
@@ -297,6 +298,30 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     ctx.setTitle(isNewNow ? 'Novo produto' : `Editar: ${state.form.name.trim() || 'produto'}`);
   }
 
+  // Painel "Na loja": como a peça aparece para os clientes e o que falta para ter carrinho.
+  const saleEl = formEl.querySelector('[data-sale]');
+  let saleMarkup = '';
+  const SALE_TEXT = {
+    cart: 'Os clientes escolhem o tamanho e a quantidade, adicionam ao pedido e só no fim enviam pelo WhatsApp. O pedido fica guardado em Pedidos.',
+    inquiry: 'Na loja não aparece o botão “Adicionar ao pedido”: os clientes só podem perguntar pelo WhatsApp. Para vender com carrinho falta:',
+    soldout: 'Aparece como ESGOTADO. Aumenta o stock de algum tamanho para voltar a vender.',
+    custom: 'Modo de pedido “Personalização”: os pedidos são combinados pelo WhatsApp. Para vender com carrinho, muda o modo de pedido para “Pedido normal”.',
+    hidden: 'Os clientes não veem esta peça.'
+  };
+
+  function paintSale() {
+    const sale = saleFromForm(state.form);
+    const items = sale.missing.map(item => `<li>${escapeHTML(item.text)}</li>`).join('');
+    const stock = sale.id === 'cart' ? ` ${sale.totalStock === 1 ? '1 unidade' : `${sale.totalStock} unidades`} em stock.` : '';
+    const markup = `<div class="panel-head"><h2 id="editor-sale">Na loja</h2>${chipHTML(sale.label, sale.tone)}</div>
+      <p class="sale-text">${escapeHTML(SALE_TEXT[sale.id] + stock)}${sale.note ? ` ${escapeHTML(sale.note)}` : ''}</p>
+      ${items ? `<ul class="sale-missing">${items}</ul>` : ''}`;
+    if (markup === saleMarkup) return;
+    saleMarkup = markup;
+    saleEl.className = `panel sale-panel sale-${sale.id}`;
+    saleEl.innerHTML = markup;
+  }
+
   // Os botões só são recriados quando a barra muda (produto criado ou arquivado); durante a gravação ficam com
   // aria-disabled em vez de disabled, para o botão com foco não desaparecer (o foco cairia no <body>).
   function paintActions() {
@@ -354,6 +379,7 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     variantsEl.innerHTML = variants.length
       ? `<div class="variant-list">${variants.map(variantRowHTML).join('')}</div>`
       : '<p class="empty-inline">Sem variantes. Sem variantes com stock e preço o produto não pode ser encomendado pelo carrinho.</p>';
+    paintSale();
     if (state.showErrors) paintErrors(validateAll());
   }
 
@@ -418,6 +444,7 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     } else {
       return;
     }
+    paintSale();
     if (state.showErrors) paintErrors(validateAll());
   }
 
@@ -643,7 +670,9 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     paintHeader();
     if (!problems.length) {
       state.saved = snapshot;
-      setStatus(`${wasNew ? 'Produto criado' : 'Alterações guardadas'} (${productStatusLabel(state.savedStatus)}).${storageNote}`, 'success');
+      const sale = saleFromForm(state.form);
+      const saleNote = sale.id === 'inquiry' ? ' Atenção: na loja aparece só “Perguntar no WhatsApp” — vê o que falta em “Na loja”.' : '';
+      setStatus(`${wasNew ? 'Produto criado' : 'Alterações guardadas'} (${productStatusLabel(state.savedStatus)}).${saleNote}${storageNote}`, 'success');
     } else {
       setStatus(`${wasNew ? 'Produto criado' : 'Produto guardado'}, mas ${problems.join(' ')} O que falhou continua no formulário: revê e carrega em Guardar para tentar de novo.${storageNote}`, 'error');
     }

@@ -508,3 +508,19 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent);
   .table-cards .col-actions { position: static; width: auto; background: transparent; box-shadow: none; }
   .table-wrap { overflow-x: visible; }
 }
+
+/* ─── "Na loja": como a peça aparece para os clientes ────────────────────── */
+
+.cell-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.sale-panel { border-left: 4px solid var(--border); }
+.sale-panel.sale-cart { border-left-color: var(--ok); }
+.sale-panel.sale-inquiry { border-left-color: #d97706; background: #fffbeb; }
+.sale-panel.sale-soldout { border-left-color: var(--danger); }
+.sale-panel.sale-custom { border-left-color: var(--indigo); }
+.sale-panel .panel-head { flex-wrap: wrap; justify-content: flex-start; }
+.sale-text { margin: 0; }
+.sale-missing { margin: 8px 0 0; padding-left: 1.25em; }
+.sale-missing li { font-weight: 600; }
+.sale-missing li + li { margin-top: 4px; }
+.alert-panel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; border-left: 4px solid #d97706; background: #fffbeb; }
+.alert-panel p { margin: 0; }

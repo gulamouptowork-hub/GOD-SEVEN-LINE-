@@ -7,7 +7,7 @@ import {
   localDate, localToday, normalizeReport, ordersByDay, ratio
 } from './analytics-logic.js';
 import { donutHTML, mountChart } from './charts.js';
-import { dbErrorMessage } from './logic.js';
+import { dbErrorMessage, saleFromRow } from './logic.js';
 import { ordersTableHTML } from './orders.js';
 import { emptyHTML, loadInto, loadingHTML, tableHTML } from './ui.js';
 
@@ -139,7 +139,11 @@ export function renderDashboard(ctx) {
     render: ({ data, orders, from, to }) => {
       const points = ordersByDay(orders, from, to);
       const inPeriod = orders.filter(order => { const day = localDate(order.created_at); return day >= from && day <= to; });
+      const sales = data.activeRows.map(saleFromRow);
+      const onSale = sales.filter(sale => sale.id === 'cart').length;
+      const inquiryOnly = sales.filter(sale => sale.id === 'inquiry').length;
       const stats = [
+        { label: 'À venda com carrinho', value: `${onSale} de ${sales.length}`, href: '#/produtos?loja=cart', tone: sales.length && onSale < sales.length ? 'warn' : '', hint: 'peças ativas com preço e stock' },
         { label: 'Produtos ativos', value: data.activeProducts, href: '#/produtos?estado=active' },
         { label: 'Pedidos novos', value: data.newOrders, href: '#/pedidos?estado=novo', tone: data.newOrders ? 'info' : '' },
         { label: 'Variantes com stock baixo', value: data.stock.low, href: '#/stock?filtro=low', tone: data.stock.low ? 'warn' : '', hint: `1 a ${threshold} unidades` },
@@ -152,6 +156,10 @@ export function renderDashboard(ctx) {
           <ul class="stats">${stats.map(statHTML).join('')}</ul>
           <p class="hint">As contagens de variantes excluem produtos arquivados.</p>
         </section>
+        ${inquiryOnly ? `<section class="panel alert-panel" aria-labelledby="dash-sale-alert">
+          <p id="dash-sale-alert"><strong>${inquiryOnly === 1 ? '1 peça ativa aparece' : `${inquiryOnly} peças ativas aparecem`} só com “Perguntar no WhatsApp”</strong> — sem o botão “Adicionar ao pedido”, porque falta preço, tamanhos ou stock.</p>
+          <a class="btn btn-small" href="#/produtos?loja=inquiry">Ver quais e corrigir</a>
+        </section>` : ''}
         <div class="analytics-grid analytics-grid-3">
           ${ordersPanelHTML(points)}
           ${statusPanelHTML(inPeriod)}

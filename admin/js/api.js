@@ -4,7 +4,7 @@ import { SITE_CONFIG } from '/config/site.js';
 import { ORDERS_PAGE_SIZE, UPLOAD, orderSearchFilter, unusedStoragePaths, uploadPath } from './logic.js';
 
 export const ORDER_LIST_SELECT = 'id, order_number, customer_name, phone, total, status, created_at, order_items(quantity)';
-const PRODUCT_LIST_SELECT = 'id, slug, name, category, product_type, tag, base_price, status, featured, created_at, product_images(image_url, position), product_variants(stock)';
+const PRODUCT_LIST_SELECT = 'id, slug, name, category, product_type, tag, base_price, status, featured, order_mode, created_at, product_images(image_url, position), product_variants(stock, price_override)';
 const PRODUCT_SELECT = 'id, slug, name, description, category, product_type, base_price, status, featured, order_mode, tag, created_at, updated_at, '
   + 'product_images(id, image_url, alt_text, position, color), product_variants(id, color, size, stock, price_override, sku, position)';
 
@@ -49,16 +49,19 @@ export function createApi(supabase) {
         variants().eq('stock', 0),
         variants().is('stock', null),
         supabase.from('orders').select(ORDER_LIST_SELECT).order('created_at', { ascending: false }).limit(5),
-        variants().gt('stock', threshold)
+        variants().gt('stock', threshold),
+        // Peças ativas com o necessário para saber se têm carrinho na loja (saleFromRow).
+        supabase.from('products').select('id, name, status, order_mode, base_price, product_variants(stock, price_override)').eq('status', 'active')
       ]);
       const failed = results.find(result => result.error);
       if (failed) throw failed.error;
-      const [active, fresh, low, out, unknown, recent, inStock] = results;
+      const [active, fresh, low, out, unknown, recent, inStock, activeRows] = results;
       return {
         activeProducts: active.count ?? 0,
         newOrders: fresh.count ?? 0,
         stock: { in: inStock.count ?? 0, low: low.count ?? 0, out: out.count ?? 0, unknown: unknown.count ?? 0 },
-        recentOrders: recent.data ?? []
+        recentOrders: recent.data ?? [],
+        activeRows: activeRows.data ?? []
       };
     },
 

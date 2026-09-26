@@ -6,6 +6,7 @@ import {
   compareSizes, createKeyFactory, customerWhatsAppURL, dbErrorMessage, emptyProductForm, filterProductRows,
   filterStockGroups, formSnapshot, generateSizeRows, isUuid, moveItem, newVariantEntry, orderDetailFromDb,
   orderItemCount, orderListRow, orderSearchFilter, parseRoute, parseWholeNumber, planSync, productDeleteConfirmation, productFormFromDb,
+  saleFromForm, saleFromRow, saleReadiness,
   productListRow, resizePlan, settleStockEdits, sizeOptions, stepStock, stockStatus, stockStatusLabel, stockSummaryLabel,
   storagePathFromPublicUrl, summarizeVariantStock, totalStock, unusedStoragePaths, uploadPath, uuid, validateImageFile,
   validateImageSource, validateImages, validateProductForm, validateVariants, variantRowsFromDb
@@ -547,4 +548,45 @@ test('dbErrorMessage traduz erros do PostgREST e do Storage', () => {
   assert.match(dbErrorMessage({ message: 'Bucket not found' }), /product-images/);
   assert.equal(dbErrorMessage({ code: 'XX', message: 'boom' }), 'Erro do servidor: boom');
   assert.equal(dbErrorMessage(null), 'Ocorreu um erro inesperado.');
+});
+
+test('saleReadiness: carrinho só com preço, tamanhos e stock (as mesmas regras da loja)', () => {
+  const active = { status: 'active', orderMode: 'cart' };
+  // ZED GOOO (real): preço mas sem tamanhos
+  const noSizes = saleReadiness({ ...active, basePrice: 200, variants: [] });
+  assert.equal(noSizes.id, 'inquiry');
+  assert.deepEqual(noSizes.missing.map(item => item.key), ['sizes']);
+  // T-shirts do seed (reais): sem preço e sem stock
+  const seed = saleReadiness({ ...active, basePrice: null, variants: Array.from({ length: 5 }, () => ({ stock: null, priceOverride: null })) });
+  assert.equal(seed.id, 'inquiry');
+  assert.deepEqual(seed.missing.map(item => item.key), ['price', 'stock']);
+  assert.match(seed.missing[0].text, /Preço base/);
+  // Preço e stock em parte dos tamanhos → carrinho, com nota
+  const partial = saleReadiness({ ...active, basePrice: 1250, variants: [{ stock: 4, priceOverride: null }, { stock: null, priceOverride: null }] });
+  assert.equal(partial.id, 'cart');
+  assert.equal(partial.totalStock, 4);
+  assert.match(partial.note, /1 tamanho sem preço ou stock fica indisponível/);
+  // Preço só numa variante (override)
+  assert.equal(saleReadiness({ ...active, basePrice: null, variants: [{ stock: 2, priceOverride: 900 }] }).id, 'cart');
+  // Tudo a 0 → esgotada
+  assert.equal(saleReadiness({ ...active, basePrice: 1250, variants: [{ stock: 0, priceOverride: null }] }).id, 'soldout');
+  // Personalização e rascunho
+  assert.equal(saleReadiness({ status: 'active', orderMode: 'custom', basePrice: null, variants: [] }).id, 'custom');
+  const draft = saleReadiness({ status: 'draft', orderMode: 'cart', basePrice: null, variants: [] });
+  assert.equal(draft.id, 'hidden');
+  assert.deepEqual(draft.missing.map(item => item.key), ['status', 'sizes']);
+});
+
+test('saleFromForm e saleFromRow convertem o formulário e a linha do Supabase', () => {
+  const form = { status: 'active', orderMode: 'cart', basePrice: '1.250', variants: [{ stock: '', priceOverride: '' }, { stock: '3', priceOverride: '' }] };
+  assert.equal(saleFromForm(form).id, 'cart');
+  assert.equal(saleFromForm({ ...form, variants: [{ stock: '-1', priceOverride: '' }] }).id, 'inquiry', 'stock inválido conta como em falta');
+  assert.equal(saleFromForm({ ...form, basePrice: '' }).missing[0].key, 'price');
+  const row = { status: 'active', order_mode: 'cart', base_price: 200, product_variants: [] };
+  assert.equal(saleFromRow(row).id, 'inquiry');
+  assert.equal(saleFromRow({ ...row, product_variants: [{ stock: 5, price_override: null }] }).id, 'cart');
+  assert.equal(productListRow({ ...productRow(), order_mode: 'cart' }).sale.id !== undefined, true);
+  const rows = [productListRow({ ...productRow(), order_mode: 'cart', product_variants: [] }), productListRow({ ...productRow(), id: '2', slug: 'x', order_mode: 'cart', base_price: 100, product_variants: [{ stock: 2 }] })];
+  assert.equal(filterProductRows(rows, { sale: 'cart' }).length, 1);
+  assert.equal(filterProductRows(rows, { sale: 'inquiry' }).length, 1);
 });
