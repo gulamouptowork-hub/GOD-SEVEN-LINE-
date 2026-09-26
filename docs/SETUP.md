@@ -186,6 +186,22 @@ delete from public.admin_users where email = 'EMAIL';
 
 Só quem está em `admin_users` consegue ver pedidos e alterar produtos, mesmo que tenha conta.
 
+### 3.7 Ativar as estatísticas de visitantes
+
+1. **SQL Editor → New query**, cola todo o conteúdo de `supabase/analytics.sql` (sempre depois do
+   `schema.sql`) e carrega em **Run**. Pode ser corrido de novo sem perder dados.
+2. A página **Visitantes** do `/admin` passa a contar as visitas a partir desse momento.
+
+Guarda só dados anónimos: identificador aleatório do browser e da visita, página, produto, domínio de
+origem e tipo de dispositivo — sem nomes, telefones nem IP. Quem tem "Não rastrear" (Do Not Track) ou
+Global Privacy Control ativo não é contado. Enquanto este passo não for feito, a loja funciona
+normalmente e deixa de tentar enviar estatísticas logo na primeira página da visita.
+
+Limites contra abusos (em `track_events`): 120 eventos por visitante em 10 minutos e, no total da loja,
+1.000 eventos por minuto e 30.000 em 24 horas. Acima disso os eventos são ignorados (a loja não é afetada).
+Os dados não expiram sozinhos; para apagar eventos antigos, corre de vez em quando no SQL Editor:
+`delete from public.analytics_events where created_at < now() - interval '13 months';`
+
 ---
 
 ## 4. Publicar na Vercel
@@ -239,6 +255,10 @@ Disponível em `https://<o-teu-site>/admin` quando o Supabase está configurado.
   modo de pedido, etiqueta), imagens (carregadas para o bucket `product-images`, até 5 MB, JPG/PNG/WebP)
   e variantes (cor, tamanho, stock, preço próprio, SKU). Um produto só aparece na loja com estado **Ativo**.
 - **Stock:** atualizar as unidades disponíveis de cada cor/tamanho.
+- **Visitantes:** visitas de hoje (por hora), dos últimos 30 dias, 12 semanas e 12 meses, com comparação
+  com o período anterior, produtos mais vistos, funil de compra, origem, dispositivos e horas de maior
+  movimento (precisa do passo 3.7). Ao entrar no painel, as visitas desse browser deixam de contar
+  (opção "Não contar as visitas deste browser", no fim da página).
 - **Pedidos:** lista com número `GSL-…`, cliente, peças, totais e estado
   (Novo → Confirmado → Em preparação → Concluído, ou Cancelado), e contacto do cliente pelo WhatsApp.
 

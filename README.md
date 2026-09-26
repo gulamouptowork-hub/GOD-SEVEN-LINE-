@@ -10,6 +10,8 @@ HOME → COLEÇÃO → PRODUTO → COR / TAMANHO / QUANTIDADE → ADICIONAR AO P
 
 ## Comandos
 
+Precisa do Node.js 22 ou mais recente (ver `engines` em `package.json`).
+
 | Comando | O que faz |
 |---|---|
 | `npm run dev` | Gera `dist/` e serve em http://localhost:4173 |

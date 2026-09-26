@@ -3,8 +3,8 @@
 import { ANALYTICS_KEYS } from '/js/analytics.js';
 import { escapeHTML } from '/js/lib/html.js';
 import {
-  ANALYTICS_PERIODS, DEFAULT_PERIOD, ANALYTICS_TIMEZONE, axisLabels, bucketLabel, comparisonCaption, delta, deviceLabel,
-  formatCount, formatPercent, funnelSteps, groupSources, hasAnyData, isMissingAnalytics, localToday, normalizeReport,
+  ANALYTICS_PERIODS, DEFAULT_PERIOD, ANALYTICS_TIMEZONE, axisLabels, bucketLabel, comparisonCaption, delta, deviceLabel, elapsedSeries,
+  formatCount, formatPercent, funnelSteps, groupSources, hasAnyData, isMissingAnalytics, localClock, localDate, localToday, normalizeReport,
   pageLabel, peakHour, periodById, periodCaption, periodRange, ratio, sourceLabel
 } from './analytics-logic.js';
 import { barListHTML, donutHTML, funnelHTML, mountChart, sparklineSVG } from './charts.js';
@@ -220,10 +220,11 @@ export function renderVisitors(ctx) {
     charts = [];
   }
 
-  function paint(report, range) {
+  function paint(fullReport, range) {
     destroyCharts();
+    const report = { ...fullReport, series: elapsedSeries(fullReport.series, range) };
     const when = report.generatedAt ?? new Date();
-    updated.textContent = `Atualizado às ${pad(when.getHours())}:${pad(when.getMinutes())}`;
+    updated.textContent = `Atualizado às ${localClock(when, ANALYTICS_TIMEZONE)}`;
     live.hidden = false;
     liveText.textContent = report.liveVisitors === 1 ? '1 pessoa na loja agora' : `${formatCount(report.liveVisitors)} pessoas na loja agora`;
     live.title = 'Visitantes com atividade nos últimos 5 minutos';
@@ -231,8 +232,8 @@ export function renderVisitors(ctx) {
       region.innerHTML = noDataHTML();
       return;
     }
-    const since = report.firstEventAt;
-    caption.textContent = `${periodCaption(range)} · ${comparisonCaption(range)} Dados desde ${pad(since.getDate())}/${pad(since.getMonth() + 1)}/${since.getFullYear()}.`;
+    const [sinceYear, sinceMonth, sinceDay] = localDate(report.firstEventAt, ANALYTICS_TIMEZONE).split('-');
+    caption.textContent = `${periodCaption(range)} · ${comparisonCaption(range)} Dados desde ${sinceDay}/${sinceMonth}/${sinceYear}.`;
     region.innerHTML = reportHTML(report, range);
     const buckets = report.series.map(point => point.bucket);
     const traffic = region.querySelector('[data-chart="traffic"]');

@@ -43,7 +43,11 @@ create index if not exists analytics_events_visitor_idx on public.analytics_even
 -- 2. track_events(): único caminho de escrita (loja → Supabase)
 --    Recebe [{ event, visitor_id, session_id, path, product_slug, referrer, device }, …] (máx. 25).
 --    Entradas inválidas são ignoradas (nunca dá erro à loja). A data/hora é sempre a do servidor.
---    Limite: 120 eventos por visitante em 10 minutos (trava abusos simples; não é anti-bot).
+--    Limites (travam abusos simples; não é anti-bot):
+--      • 120 eventos por visitante em 10 minutos;
+--      • no total da loja, 1.000 eventos por minuto e 30.000 em 24 horas. Como o identificador do
+--        visitante vem do browser, este teto global é o que impede alguém de encher a base de dados
+--        (e afetar os pedidos). Uma loja com milhares de visitas por dia fica muito abaixo dele.
 --    Devolve quantos eventos foram gravados.
 -- ---------------------------------------------------------------------
 
@@ -64,9 +68,19 @@ declare
   v_referrer text;
   v_device text;
   v_recent integer;
+  v_minute integer;
+  v_day integer;
   v_saved integer := 0;
 begin
   if p_events is null or jsonb_typeof(p_events) <> 'array' then
+    return 0;
+  end if;
+
+  select count(*) filter (where created_at > now() - interval '1 minute'), count(*)
+    into v_minute, v_day
+  from public.analytics_events
+  where created_at > now() - interval '24 hours';
+  if v_minute >= 1000 or v_day >= 30000 then
     return 0;
   end if;
 
@@ -97,6 +111,9 @@ begin
     where visitor_id = v_visitor and created_at > now() - interval '10 minutes';
     if v_recent >= 120 then
       continue;
+    end if;
+    if v_minute + v_saved >= 1000 or v_day + v_saved >= 30000 then
+      exit;
     end if;
 
     v_path := nullif(v_item->>'path', '');

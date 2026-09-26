@@ -1,14 +1,14 @@
 // Verificações estáticas (equivalente a lint para este projeto sem dependências):
 //  1. sintaxe de todos os módulos JS;  2. links/recursos internos de dist/ existem;
 //  3. SEO mínimo por página;  4. regras de negócio visíveis (preços, WhatsApp).
-// Uso: npm run build && npm run check
+// Uso: npm run build && npm run check  ·  DIST_DIR=<pasta> verifica outra pasta gerada (como no serve.js)
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dist = path.join(root, 'dist');
+const dist = process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.join(root, 'dist');
 const problems = [];
 const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
   const full = path.join(dir, entry.name);
@@ -57,12 +57,16 @@ if (!fs.existsSync(dist)) {
       if (!/^https:\/\/wa\.me\/\d{8,15}(\?text=[^"\s]*)?$/.test(url.replace(/&amp;/g, '&'))) problems.push(`${name}: link WhatsApp mal formado ${url}`);
     }
     for (const [, json] of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
-      try { JSON.parse(json); } catch { problems.push(`${name}: JSON-LD inválido`); }
+      let data;
+      try { data = JSON.parse(json); } catch { problems.push(`${name}: JSON-LD inválido`); continue; }
+      // O Google exige offers num Product (sem preço, a página só tem o BreadcrumbList).
+      if (data['@type'] === 'Product' && !data.offers) problems.push(`${name}: JSON-LD Product sem offers`);
     }
   }
   // Nunca "Preço sob consulta" num produto com preço configurado.
   const catalog = JSON.parse(fs.readFileSync(path.join(dist, 'data/products.json'), 'utf8'));
   for (const product of catalog) {
+    if (product.status !== 'active') problems.push(`data/products.json publica um produto em ${product.status}: ${product.slug}`);
     const file = path.join(dist, 'produtos', `${product.slug}.html`);
     if (!fs.existsSync(file)) { if (product.status === 'active') problems.push(`falta página de produto: ${product.slug}`); continue; }
     const hasPrice = Number.isFinite(product.basePrice) || product.variants.some(variant => Number.isFinite(variant.priceOverride));

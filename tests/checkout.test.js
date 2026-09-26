@@ -130,3 +130,30 @@ test('com taxa configurada, resumo, mensagem e servidor dão o mesmo total', () 
   const message = buildOrderMessage(order);
   for (const line of ['Subtotal: 4.000 MT', 'Entrega: 100 MT', 'TOTAL: 4.100 MT']) assert.ok(message.includes(line), line);
 });
+
+test('último pedido fica só no separador (sessionStorage) e o registo antigo em localStorage é apagado', async t => {
+  const memory = () => { const map = new Map(); return { getItem: key => map.get(key) ?? null, setItem: (key, value) => map.set(key, String(value)), removeItem: key => map.delete(key), map }; };
+  const previous = { local: Object.getOwnPropertyDescriptor(globalThis, 'localStorage'), session: Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage') };
+  const local = memory();
+  const session = memory();
+  Object.defineProperty(globalThis, 'localStorage', { value: local, configurable: true, writable: true });
+  Object.defineProperty(globalThis, 'sessionStorage', { value: session, configurable: true, writable: true });
+  t.after(() => {
+    for (const [name, descriptor] of [['localStorage', previous.local], ['sessionStorage', previous.session]]) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name];
+    }
+  });
+  const { friendlyOrderError, loadLastOrder, submitOrder } = await import('../js/services/orders.js');
+  const key = SITE_CONFIG.storageKeys.lastOrder;
+  local.setItem(key, JSON.stringify({ orderNumber: 'GSL-ANTIGO', customer: { name: 'Cliente Anterior' } }));
+  assert.equal(loadLastOrder(), null);
+  assert.equal(local.getItem(key), null, 'registo antigo com dados do cliente apagado do dispositivo');
+  // Sem backend (testes): pedido local, guardado apenas no separador.
+  const order = await submitOrder(buildOrderDraft(draftItems, draftCustomer));
+  assert.equal(order.persistence, 'local');
+  assert.ok(isLocalOrderNumber(order.orderNumber));
+  assert.equal(local.map.size, 0);
+  assert.equal(loadLastOrder().orderNumber, order.orderNumber);
+  // Sem resposta do servidor não se convida a repetir às cegas (o pedido pode já estar gravado).
+  assert.match(friendlyOrderError({ code: 'ORDER_UNCONFIRMED' }), /pode já ter ficado registado/);
+});

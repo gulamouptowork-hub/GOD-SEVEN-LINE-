@@ -13,7 +13,7 @@ O catálogo, o pedido e a mensagem WhatsApp funcionam em dois modos:
 ```
 config/site.js           Configuração central (marca, WhatsApp, categorias, tamanhos, entrega, limites de stock)
 config/runtime.js        Gerado no build a partir do ambiente (Supabase URL + anon key, WHATSAPP_NUMBER, demo)
-data/products.json       Catálogo do modo local e fonte das páginas estáticas
+data/products.json       Catálogo do modo local e fonte das páginas estáticas nesse modo (publicado só com os ativos)
 assets/originals/        Fotografias originais (não publicadas)
 assets/images/           WebP responsivos gerados por `npm run images`
 js/lib/                  Lógica pura partilhada por browser, build e testes
@@ -104,4 +104,8 @@ Produto → cor → tamanho → quantidade → ADICIONAR AO PEDIDO (valida varia
 ## Analytics
 
 `js/analytics.js` → `track(evento, dados)` emite `gsl:analytics` e alimenta `window.dataLayer` se existir.
-Eventos: `view_product`, `select_size`, `add_to_cart`, `remove_from_cart`, `begin_checkout`, `whatsapp_checkout`.
+Eventos: `page_view`, `view_product`, `select_size`, `add_to_cart`, `remove_from_cart`, `begin_checkout`, `whatsapp_checkout`, `whatsapp_click`.
+Com o Supabase configurado, os eventos de `SERVER_EVENTS` (`js/lib/analytics.js`) vão em lotes anónimos para
+`track_events` (`supabase/analytics.sql`); o painel lê-os só por `analytics_report` (admin). Não envia nada no
+modo demo, com Do Not Track / GPC, em browsers automatizados, no browser de quem entra no `/admin` nem quando o
+browser não deixa guardar o identificador.

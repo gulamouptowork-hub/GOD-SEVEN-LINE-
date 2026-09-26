@@ -23,8 +23,10 @@
 
 html { scrollbar-gutter: stable; scroll-padding-top: calc(var(--header-h) + 16px); background-color: var(--paper); transition: background-color .35s; }
 /* Com barras de scroll clássicas (Windows) a calha reservada fica fora do ::backdrop e mostra o fundo da raiz:
-   enquanto há um modal, a raiz leva a cor do véu para não sobrar uma faixa clara junto à margem direita. */
+   enquanto há um modal, a raiz leva a cor do véu para não sobrar uma faixa clara junto à margem direita.
+   A gaveta do pedido ocupa a altura toda junto à calha: aí a calha fica cor de papel e a gaveta chega à margem. */
 html.is-locked { overflow: hidden; background-color: color-mix(in srgb, rgb(17 19 15) 55%, var(--paper)); }
+html.is-locked:has(.cart-drawer[open]) { background-color: var(--paper); }
 html.is-locked:has(.mobile-menu[open]) { background-color: var(--ink); }
 html.is-locked:has(.lightbox[open]) { background-color: #0e0f0d; }
 body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overflow-x: clip; }
@@ -44,7 +46,7 @@ textarea { resize: vertical; }
 .button { min-height: 48px; gap: 18px; justify-content: space-between; letter-spacing: .6px; text-transform: uppercase; border: 1px solid var(--ink); cursor: pointer; }
 .button .icon { width: 18px; height: 18px; transition: transform .25s var(--ease-out); }
 /* god-seven.css aumenta ".button span" para a seta ↗; os rótulos em <span> mantêm o tamanho do botão. */
-.button span:first-child:not(:last-child), .button .icon + span { font-size: inherit; line-height: inherit; }
+.button span:first-child:not(:last-child), .button .icon + span, .add-button [data-add-label] { font-size: inherit; line-height: inherit; }
 .button:hover .icon--arrow { transform: translateX(3px); }
 .button[disabled], .button[aria-disabled="true"] { background: #b9bab1; border-color: #b9bab1; color: #fff; cursor: not-allowed; transform: none; }
 .button--block { display: flex; width: 100%; justify-content: center; gap: 14px; }

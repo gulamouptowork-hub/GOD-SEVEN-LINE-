@@ -81,6 +81,24 @@ test('supabase: analytics.sql — recolha, permissões e relatório', { skip: PG
   assert.equal(total, 120);
   ok('limite: 120 eventos por visitante em 10 minutos');
 
+  // Teto global: identificadores aleatórios não contornam o limite da loja
+  const fresh = () => ({ event: 'page_view', path: '/', visitor_id: crypto.randomUUID(), session_id: crypto.randomUUID() });
+  await db.exec('delete from analytics_events');
+  await db.exec(`insert into analytics_events (event, visitor_id, session_id, created_at)
+    select 'page_view', gen_random_uuid(), gen_random_uuid(), now() - interval '10 seconds' from generate_series(1, 990)`);
+  const minuteCount = async () => (await db.query(`select count(*)::int as n from analytics_events where created_at > now() - interval '1 minute'`)).rows[0].n;
+  const beforeCap = await minuteCount();
+  assert.equal(await track(Array.from({ length: 25 }, fresh)), 1000 - beforeCap, 'grava só até 1.000 eventos no último minuto');
+  assert.equal(await track([fresh()]), 0, 'com o teto atingido, visitantes novos não gravam');
+  await db.exec(`delete from analytics_events where created_at > now() - interval '1 minute'`);
+  await db.exec(`insert into analytics_events (event, visitor_id, session_id, created_at)
+    select 'page_view', gen_random_uuid(), gen_random_uuid(), now() - interval '2 hours' from generate_series(1, 30000)`);
+  assert.equal(await track([fresh()]), 0, 'teto de 30.000 eventos em 24 horas');
+  await db.exec(`update analytics_events set created_at = now() - interval '25 hours' where created_at > now() - interval '3 hours'`);
+  assert.equal(await track([fresh()]), 1, 'eventos com mais de 24 horas já não contam para o teto');
+  await db.exec('delete from analytics_events');
+  ok('teto global: 1.000 eventos por minuto e 30.000 em 24 horas, qualquer que seja o visitante');
+
   // ── Permissões ──
   assert.match(await failure(() => asRole('anon', () => db.query('select * from analytics_events'))), /permission denied/);
   assert.match(await failure(() => asRole('anon', () => db.query(`insert into analytics_events (event, visitor_id, session_id) values ('page_view', '${V1}', '${S1}')`))), /permission denied/);
@@ -93,7 +111,16 @@ test('supabase: analytics.sql — recolha, permissões e relatório', { skip: PG
   await db.query(`insert into admin_users (user_id, email) values ($1, 'dono@exemplo.com')`, [admin]);
   assert.match(await failure(() => asRole('authenticated', () => db.query(`select public.analytics_report('2024-01-01', '2024-01-07')`), other)), /FORBIDDEN/);
   assert.match(await failure(() => asRole('authenticated', () => db.query('select * from analytics_events'), admin)), /permission denied/);
-  ok('conta autenticada sem admin_users → FORBIDDEN; nem o admin lê a tabela diretamente');
+  assert.match(await failure(() => asRole('authenticated', () => db.query(`select public.analytics_totals(now() - interval '1 day', now())`), admin)), /permission denied/);
+  ok('conta autenticada sem admin_users → FORBIDDEN; nem o admin lê a tabela nem chama analytics_totals diretamente');
+
+  const functions = (await db.query(`select proname, prosecdef, proconfig from pg_proc where proname in ('track_events', 'analytics_report', 'analytics_totals') order by proname`)).rows;
+  assert.deepEqual(functions.map(f => [f.proname, f.prosecdef, (f.proconfig ?? []).join(',')]), [
+    ['analytics_report', true, 'search_path=public'],
+    ['analytics_totals', false, 'search_path=public'],
+    ['track_events', true, 'search_path=public']
+  ]);
+  ok('track_events e analytics_report: security definer com search_path fixo; analytics_totals só interna');
 
   const report = async (from, to, bucket = 'day', tz = 'Africa/Maputo') => asRole('authenticated',
     async () => (await db.query('select public.analytics_report($1::date, $2::date, $3, $4) as r', [from, to, bucket, tz])).rows[0].r, admin);
@@ -175,8 +202,10 @@ test('supabase: analytics.sql — recolha, permissões e relatório', { skip: PG
 
   const weeks = await report('2024-02-26', '2024-03-10', 'week');
   assert.deepEqual(weeks.series.map(s => [s.bucket, s.visitors]), [['2024-02-26T00:00', 1], ['2024-03-04T00:00', 3]]);
+  // 29/2 às 22:30Z = 1/3 às 00:30 em Maputo: conta em março
+  await db.query(`insert into analytics_events (created_at, event, visitor_id, session_id, path) values ('2024-02-29T22:30:00Z', 'page_view', $1, $2, '/')`, [V3, S3]);
   const months = await report('2024-02-01', '2024-03-31', 'month');
-  assert.deepEqual(months.series.map(s => [s.bucket, s.page_views]), [['2024-02-01T00:00', 1], ['2024-03-01T00:00', 5]]);
+  assert.deepEqual(months.series.map(s => [s.bucket, s.page_views]), [['2024-02-01T00:00', 1], ['2024-03-01T00:00', 6]]);
   const hours = await report('2024-03-04', '2024-03-04', 'hour');
   assert.equal(hours.series.length, 24);
   assert.equal(hours.series.find(s => s.bucket === '2024-03-04T10:00').page_views, 2);
@@ -188,4 +217,24 @@ test('supabase: analytics.sql — recolha, permissões e relatório', { skip: PG
   assert.ok(week.first_event_at);
   assert.equal(typeof week.live_visitors, 'number');
   ok('o fuso é um parâmetro; first_event_at e live_visitors presentes');
+
+  // Período que inclui o momento atual ("Hoje"): compara com ontem só até à mesma hora.
+  const clock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Maputo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+  if (clock > '00:10' && clock < '23:50') {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Maputo' }).format(new Date());
+    const V4 = '44444444-4444-4444-8444-444444444444';
+    const S4 = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    await db.query(`insert into analytics_events (created_at, event, visitor_id, session_id, path) values
+      (now() - interval '1 minute', 'page_view', $1, $2, '/'),
+      (now() - interval '1 day 5 minutes', 'page_view', $1, $2, '/'),
+      (now() - interval '1 day' + interval '5 minutes', 'page_view', $1, $2, '/')`, [V4, S4]);
+    const now = await report(today, today, 'hour');
+    assert.equal(now.series.length, 24);
+    assert.equal(now.totals.page_views, 1);
+    assert.equal(now.previous.page_views, 1, 'ontem depois da hora atual não entra na comparação');
+    assert.ok(now.live_visitors >= 1);
+    ok('“Hoje” compara com ontem até à mesma hora; o evento de há 1 minuto conta como visitante ativo');
+  } else {
+    t.diagnostic('perto da meia-noite de Maputo: comparação "até à mesma hora" não verificada nesta execução');
+  }
 });

@@ -29,17 +29,24 @@ function write(area, key, value) {
 function getContext() {
   if (context) return context;
   const nav = globalThis.navigator ?? {};
-  const enabled = hasBackend && typeof globalThis.fetch === 'function' && !read('sessionStorage', ANALYTICS_KEYS.off) && trackingAllowed({
+  let enabled = hasBackend && typeof globalThis.fetch === 'function' && !read('sessionStorage', ANALYTICS_KEYS.off) && trackingAllowed({
     doNotTrack: nav.doNotTrack ?? globalThis.doNotTrack,
     globalPrivacyControl: nav.globalPrivacyControl,
     webdriver: nav.webdriver,
     optedOut: read('localStorage', ANALYTICS_KEYS.optOut) === '1'
   });
+  // Sem recolha (demo, Do Not Track, opção do admin…) não se guarda nenhum identificador no browser.
+  if (!enabled) {
+    context = { enabled: false, visitor: null, device: null };
+    return context;
+  }
   let visitor = read('localStorage', ANALYTICS_KEYS.visitor);
   if (!visitor || !UUID.test(visitor)) {
     visitor = randomId();
     write('localStorage', ANALYTICS_KEYS.visitor, visitor);
   }
+  // Armazenamento bloqueado: cada página (e cada evento) contaria como visitante e visita novos → não conta.
+  if (read('localStorage', ANALYTICS_KEYS.visitor) !== visitor) enabled = false;
   const screen = globalThis.screen ?? {};
   const device = analyticsDevice({ width: screen.width, height: screen.height, coarse: Boolean(globalThis.matchMedia?.('(pointer: coarse)').matches) });
   context = { enabled, visitor, device };
@@ -63,16 +70,18 @@ function stop() {
 
 function send(batch) {
   const key = runtime.supabaseAnonKey;
-  fetch(`${runtime.supabaseUrl}/rest/v1/rpc/track_events`, {
-    method: 'POST',
-    headers: { apikey: key, ...(key.startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {}), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_events: batch }),
-    keepalive: true,
-    credentials: 'omit'
-  }).then(response => {
-    // 404: supabase/analytics.sql ainda não foi executado → não voltar a tentar nesta visita.
-    if (response.status === 404) stop();
-  }).catch(() => { /* estatísticas nunca podem partir a loja */ });
+  try {
+    fetch(`${runtime.supabaseUrl}/rest/v1/rpc/track_events`, {
+      method: 'POST',
+      headers: { apikey: key, ...(key.startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {}), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_events: batch }),
+      keepalive: true,
+      credentials: 'omit'
+    }).then(response => {
+      // 404: supabase/analytics.sql ainda não foi executado → não voltar a tentar nesta visita.
+      if (response.status === 404) stop();
+    }).catch(() => { /* estatísticas nunca podem partir a loja */ });
+  } catch { /* fetch substituído por outro script que lança logo (chamado também do temporizador e do pagehide) */ }
 }
 
 export function flushAnalytics() {
@@ -104,14 +113,16 @@ export function track(event, detail = {}) {
 export function initAnalytics() {
   if (initialized || typeof document === 'undefined') return;
   initialized = true;
-  track('page_view', { referrer: analyticsReferrer({ referrer: document.referrer, host: location.host, search: location.search }) });
-  document.addEventListener('click', event => {
-    const link = event.target instanceof Element ? event.target.closest('a[href*="wa.me/"], a[href*="api.whatsapp.com/"], a[href^="whatsapp:"]') : null;
-    // No /finalizar o envio do pedido já conta como whatsapp_checkout.
-    if (link && !link.closest('[data-checkout]')) track('whatsapp_click');
-  }, { capture: true });
-  addEventListener('pagehide', flushAnalytics);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushAnalytics();
-  });
+  try {
+    track('page_view', { referrer: analyticsReferrer({ referrer: document.referrer, host: location.host, search: location.search }) });
+    document.addEventListener('click', event => {
+      const link = event.target instanceof Element ? event.target.closest('a[href*="wa.me/"], a[href*="api.whatsapp.com/"], a[href^="whatsapp:"]') : null;
+      // No /finalizar o envio do pedido já conta como whatsapp_checkout.
+      if (link && !link.closest('[data-checkout]')) track('whatsapp_click');
+    }, { capture: true });
+    addEventListener('pagehide', flushAnalytics);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushAnalytics();
+    });
+  } catch { /* estatísticas nunca podem impedir o resto da loja de arrancar */ }
 }

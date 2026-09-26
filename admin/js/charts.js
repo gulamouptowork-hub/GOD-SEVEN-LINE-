@@ -146,7 +146,7 @@ export function donutHTML({ segments, centerValue, centerLabel = '', format = fo
   const legend = segments.map(segment => `<li><span class="chart-swatch tone-${segment.tone}" aria-hidden="true"></span><span class="donut-legend-label">${escapeHTML(segment.label)}</span>`
     + `<strong>${escapeHTML(format(segment.value))}</strong><span class="donut-legend-pct">${total ? `${Math.round((segment.value / total) * 100)}%` : '—'}</span></li>`).join('');
   const summary = `${label}: ${segments.map(segment => `${segment.label} ${format(segment.value)}`).join(', ')}.`;
-  return `<div class="donut">
+  return `<div class="donut-wrap"><div class="donut">
     <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="${escapeHTML(summary)}">
       <circle class="donut-track" cx="60" cy="60" r="${radius}"/>
       <g transform="rotate(-90 60 60)">${arcs}</g>
@@ -154,7 +154,7 @@ export function donutHTML({ segments, centerValue, centerLabel = '', format = fo
       <text class="donut-caption" x="60" y="76" text-anchor="middle">${escapeHTML(centerLabel)}</text>
     </svg>
     <ul class="donut-legend">${legend}</ul>
-  </div>`;
+  </div></div>`;
 }
 
 // Barras horizontais (ranking). items: [{ label, href, value, sub, tone }]
@@ -261,9 +261,12 @@ export function mountChart(container, spec) {
     if (x < geometry.plot.left - 12 || x > geometry.plot.right + 12) return;
     show(indexAt(event.clientX));
   };
+  // No toque, o pointerleave chega logo ao levantar o dedo (antes do foco): a dica fica até se tocar fora do gráfico.
+  const onOutside = event => { if (active >= 0 && !container.contains(event.target)) clear(); };
   container.addEventListener('pointermove', onPointer);
   container.addEventListener('pointerdown', onPointer);
-  container.addEventListener('pointerleave', () => { if (document.activeElement !== svg()) clear(); });
+  container.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch' && document.activeElement !== svg()) clear(); });
+  document.addEventListener('pointerdown', onOutside);
   container.addEventListener('focusin', event => {
     if (event.target === svg() && active < 0 && count) show(count - 1, true);
   });
@@ -286,6 +289,7 @@ export function mountChart(container, spec) {
   draw();
   return () => {
     observer?.disconnect();
+    document.removeEventListener('pointerdown', onOutside);
     if (pending) cancelAnimationFrame(pending);
   };
 }

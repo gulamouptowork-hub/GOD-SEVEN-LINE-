@@ -54,6 +54,11 @@ export function localDate(date, timeZone = ANALYTICS_TIMEZONE) {
   return localToday(date instanceof Date ? date : new Date(date), timeZone);
 }
 
+// 'HH:MM' de um instante, no fuso da loja (não no do computador de quem abre o painel).
+export function localClock(date, timeZone = ANALYTICS_TIMEZONE) {
+  return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date instanceof Date ? date : new Date(date));
+}
+
 export const periodById = id => ANALYTICS_PERIODS.find(period => period.id === id) ?? ANALYTICS_PERIODS.find(period => period.id === DEFAULT_PERIOD);
 
 // Intervalo (datas locais, inclusive) e agrupamento de cada período.
@@ -65,6 +70,13 @@ export function periodRange(id, today) {
     case 'mensal': return { period, from: addMonths(startOfMonth(today), -11), to: today, bucket: 'month' };
     default: return { period, from: addDays(today, -29), to: today, bucket: 'day' };
   }
+}
+
+// "Hoje": as horas que ainda não chegaram não são zeros — ficam fora do gráfico, dos cartões e da tabela.
+export function elapsedSeries(series, { bucket, to }, now = new Date(), timeZone = ANALYTICS_TIMEZONE) {
+  if (bucket !== 'hour' || to !== localToday(now, timeZone)) return series;
+  const limit = `${to}T${pad(localHour(now, timeZone))}:00`;
+  return series.filter(point => point.bucket <= limit);
 }
 
 // ─── Rótulos ─────────────────────────────────────────────────────────────────

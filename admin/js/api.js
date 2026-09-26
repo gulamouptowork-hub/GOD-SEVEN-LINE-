@@ -62,9 +62,10 @@ export function createApi(supabase) {
       };
     },
 
-    // Pedidos desde uma data (só as colunas dos gráficos do Dashboard).
+    // Pedidos desde uma data (só as colunas dos gráficos do Dashboard). Mais recentes primeiro: se o limite de linhas
+    // do Supabase (1000 por omissão) cortar a resposta, faltam os dias mais antigos e não os de hoje.
     async recentOrderStats(sinceISO) {
-      return unwrap(await supabase.from('orders').select('created_at, total, status').gte('created_at', sinceISO).order('created_at').limit(5000)) ?? [];
+      return unwrap(await supabase.from('orders').select('created_at, total, status').gte('created_at', sinceISO).order('created_at', { ascending: false }).limit(5000)) ?? [];
     },
 
     // ── Estatísticas (supabase/analytics.sql) ──

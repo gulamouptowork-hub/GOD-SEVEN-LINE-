@@ -53,7 +53,8 @@ export function buildOrderDraft(items, customer, { now = new Date(), fees } = {}
 
 // Argumentos da RPC create_order (supabase/schema.sql). O servidor recalcula o total e compara-o com
 // p_expected_total; como a create_order ainda não conhece taxas de entrega (total = soma das peças),
-// vai o subtotal — uma taxa configurada em deliveryFees nunca dá PRICE_CHANGED.
+// vai o subtotal — uma taxa configurada em deliveryFees nunca dá PRICE_CHANGED. Se a create_order passar
+// a somar a taxa ao total, enviar aqui draft.total (e guardar a taxa em delivery_fee).
 export function createOrderArgs(draft) {
   return {
     p_customer: {

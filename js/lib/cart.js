@@ -97,7 +97,7 @@ export function reconcileCart(items, products) {
   for (const item of merged.values()) {
     const { product, variant } = resolve(products, item.productId, item.variantId);
     if (!product || !variant || !isVariantPurchasable(product, variant)) {
-      changes.push({ type: 'removed', name: item.name, reason: variant && variantStatus(product, variant) === 'soldout' ? 'soldout' : 'unavailable' });
+      changes.push({ type: 'removed', name: item.name || product?.name || 'Uma peça', reason: variant && variantStatus(product, variant) === 'soldout' ? 'soldout' : 'unavailable' });
       continue;
     }
     const line = snapshotLine(product, variant, Math.min(item.quantity, variant.stock), item.addedAt);

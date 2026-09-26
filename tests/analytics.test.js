@@ -5,8 +5,8 @@ import {
   productSlugFromPath, randomId, serverEvent, trackingAllowed
 } from '../js/lib/analytics.js';
 import {
-  addDays, addMonths, axisLabels, bucketLabel, delta, formatPercent, funnelSteps, groupSources, isMissingAnalytics,
-  localDate, localHour, localToday, normalizeReport, ordersByDay, pageLabel, peakHour, periodCaption, periodRange,
+  addDays, addMonths, axisLabels, bucketLabel, delta, elapsedSeries, formatPercent, funnelSteps, groupSources, isMissingAnalytics,
+  localClock, localDate, localHour, localToday, normalizeReport, ordersByDay, pageLabel, peakHour, periodCaption, periodRange,
   sourceLabel, startOfWeek
 } from '../admin/js/analytics-logic.js';
 import { barListHTML, columnChartSVG, donutHTML, labelIndices, lineChartSVG, niceScale, sparklineSVG, tooltipHTML } from '../admin/js/charts.js';
@@ -100,6 +100,21 @@ test('localToday / localHour usam a hora de Maputo', () => {
   assert.equal(localToday(lateUtc, 'UTC'), '2026-09-25');
   assert.equal(localHour(lateUtc), 0);
   assert.equal(localDate('2026-09-25T21:59:00Z'), '2026-09-25');
+  assert.equal(localClock(lateUtc), '00:30', '“Atualizado às” em hora de Maputo, seja qual for o fuso do computador');
+  assert.equal(localClock('2026-09-26T10:05:00Z'), '12:05');
+  assert.equal(localClock(lateUtc, 'Asia/Taipei'), '06:30');
+});
+
+test('elapsedSeries: “Hoje” só até à hora atual; outros períodos intactos', () => {
+  const hours = Array.from({ length: 24 }, (_, hour) => ({ bucket: `2026-09-26T${String(hour).padStart(2, '0')}:00`, visitors: 1 }));
+  const now = new Date('2026-09-26T12:20:00Z'); // 14:20 em Maputo
+  const today = elapsedSeries(hours, { bucket: 'hour', to: '2026-09-26' }, now);
+  assert.equal(today.length, 15);
+  assert.equal(today.at(-1).bucket, '2026-09-26T14:00');
+  assert.equal(elapsedSeries(hours, { bucket: 'hour', to: '2026-09-26' }, new Date('2026-09-25T22:10:00Z')).length, 1, '00:10 → só a hora 0');
+  assert.equal(elapsedSeries(hours, { bucket: 'hour', to: '2026-09-25' }, now).length, 24, 'um dia já passado fica completo');
+  const days = [{ bucket: '2026-09-25T00:00' }, { bucket: '2026-09-26T00:00' }];
+  assert.equal(elapsedSeries(days, { bucket: 'day', to: '2026-09-26' }, now), days);
 });
 
 test('periodRange: hoje, 30 dias, 12 semanas e 12 meses', () => {

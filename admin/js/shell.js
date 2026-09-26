@@ -85,6 +85,7 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
   let currentStamp = 0;
   let carryFlash = null;
   let firstRender = true;
+  let destroyed = false;
 
   const isDirty = () => Boolean(guard?.());
 
@@ -207,10 +208,24 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
     if (isDirty() && !window.confirm(UNSAVED_MESSAGE)) return;
     const button = event.currentTarget;
     button.disabled = true;
+    // A limpeza da vista (ex.: fotografias carregadas e por guardar no editor) ainda precisa da sessão: a vista
+    // termina antes de sair. Sem sessão, o Storage recusaria apagar e os ficheiros ficariam órfãos.
+    token += 1;
+    guard = null;
+    const release = cleanup;
+    cleanup = null;
     try {
+      await release?.();
       await onLogout();
+    } catch (error) {
+      console.error(error);
     } finally {
       button.disabled = false;
+    }
+    // A sessão não terminou (o erro já está à vista): volta a mostrar a página atual, mantendo a mensagem.
+    if (!destroyed) {
+      carryFlash = flashAlert.textContent ? [flashAlert.textContent, 'error'] : null;
+      render();
     }
   });
   window.addEventListener('hashchange', onHashChange);
@@ -222,6 +237,7 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
   return {
     flash,
     destroy() {
+      destroyed = true;
       token += 1;
       try { cleanup?.(); } catch (error) { console.error(error); }
       guard = null;

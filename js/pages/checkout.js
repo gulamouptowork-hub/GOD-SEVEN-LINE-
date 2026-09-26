@@ -304,7 +304,7 @@ export async function init() {
       popup?.close();
       if (['STOCK_INSUFFICIENT', 'PRICE_CHANGED', 'PRODUCT_UNAVAILABLE'].includes(failure?.code)) {
         try { setNotice((await catalog({ fresh: true })).changes); } catch { /* mantém o aviso abaixo */ }
-        if (!cart.getItems().length) { renderEmpty(); return; }
+        if (!cart.getItems().length) { renderEmpty(); focusMain(); return; }
         if (left()) { toast(friendlyOrderError(failure), { tone: 'error' }); return; }
         renderReview();
         $('[data-send-error]', main).textContent = friendlyOrderError(failure);
@@ -318,7 +318,12 @@ export async function init() {
       }
     } finally {
       sending = false;
-      if (button.isConnected) { button.classList.remove('is-loading'); button.disabled = false; }
+      if (button.isConnected) {
+        button.classList.remove('is-loading');
+        button.disabled = false;
+        // Desativado enquanto enviava, o botão perdeu o foco: devolvê-lo para o teclado continuar junto ao erro.
+        if (document.activeElement === document.body) button.focus({ preventScroll: true });
+      }
     }
   }
 
@@ -369,7 +374,16 @@ export async function init() {
     const last = loadLastOrder();
     if (target === 'done' && last?.orderNumber && typeof last.message === 'string' && !hasItems) { renderDone(last); setStep('done', { push: false }); return; }
     if (!hasItems) { renderEmpty(); setStep('details', { push: false }); return; }
-    if (target === 'review' && validateCustomer(customer).valid) { renderReview(); setStep('review', { push: false }); return; }
+    if (target === 'review') {
+      // Ao voltar ao resumo com "Avançar" do browser, aplica a mesma normalização do botão Continuar.
+      const { valid, value } = validateCustomer(customer);
+      if (valid) {
+        customer = { ...customer, ...value, phone: formatPhone(value.phone) };
+        renderReview();
+        setStep('review', { push: false });
+        return;
+      }
+    }
     renderDetails();
     setStep('details', { push: false });
   }

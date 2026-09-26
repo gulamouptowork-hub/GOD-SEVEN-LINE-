@@ -76,6 +76,14 @@ test('reconcile remove esgotados, ajusta stock e atualiza preços', () => {
   assert.deepEqual(changes.map(change => change.type).sort(), ['price', 'quantity', 'removed']);
 });
 
+test('reconcile: linha guardada sem nome usa o nome do produto (ou "Uma peça")', () => {
+  const updated = demoProducts();
+  variantOf(byslug(updated, 'polo-seven'), 'Rosa', 'L').stock = 0;
+  const [line] = add([], polo, 'Rosa', 'L', 1);
+  assert.equal(reconcileCart([{ ...line, name: '' }], updated).changes[0].name, 'Polo Seven');
+  assert.equal(reconcileCart([{ ...line, name: '', productId: 'apagado' }], updated).changes[0].name, 'Uma peça');
+});
+
 test('dados corrompidos no storage são descartados', () => {
   assert.deepEqual(sanitizeStoredItems('lixo'), []);
   assert.equal(sanitizeStoredItems([{ productId: 'a', variantId: 'b', quantity: 0 }, { productId: 'a', variantId: 'b', quantity: 2, unitPrice: -5 }]).length, 1);
