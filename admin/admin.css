@@ -285,8 +285,9 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent);
 
 /* ─── Tabelas ────────────────────────────────────────────────────────────── */
 
+/* position: relative — os .sr-only (absolutos) dentro da tabela ficam presos ao scroll do contentor em vez de alargarem a página. */
 .table-wrap {
-  overflow-x: auto; background: var(--surface);
+  position: relative; overflow-x: auto; background: var(--surface);
   border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow);
 }
 .panel .table-wrap { box-shadow: none; }
@@ -305,6 +306,14 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent);
 .thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--border-soft); display: block; }
 .thumb-empty { display: block; width: 48px; height: 48px; border-radius: 6px; background: repeating-linear-gradient(45deg, #e5e7eb, #e5e7eb 6px, #f3f4f6 6px, #f3f4f6 12px); }
 .featured { color: var(--warn); font-weight: 700; white-space: nowrap; }
+/* Ações presas à direita: continuam visíveis quando a tabela tem scroll horizontal (ecrãs médios). */
+.table .col-actions {
+  width: 1%; white-space: nowrap;
+  position: sticky; right: 0; z-index: 1;
+  background: var(--surface); box-shadow: inset 1px 0 0 var(--border-soft);
+}
+.table th.col-actions { background: var(--surface-alt); }
+.cell-actions { display: flex; gap: 6px; }
 
 /* ─── Dashboard ──────────────────────────────────────────────────────────── */
 
@@ -496,5 +505,6 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent);
   .table-cards td::before { grid-column: 1; grid-row: 1 / span 9; align-self: center; content: attr(data-label); color: var(--muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
   .table-cards td > * { grid-column: 2; justify-self: start; max-width: 100%; }
   .table-cards .num { text-align: left; }
+  .table-cards .col-actions { position: static; width: auto; background: transparent; box-shadow: none; }
   .table-wrap { overflow-x: visible; }
 }

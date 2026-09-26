@@ -1,16 +1,30 @@
-// Produtos: tabela com pesquisa e filtros por categoria/estado.
+// Produtos: tabela com pesquisa, filtros por categoria/estado e ações (editar / apagar) por linha.
 import { SITE_CONFIG } from '/config/site.js';
 import { pluralize } from '/js/lib/format.js';
 import { escapeHTML } from '/js/lib/html.js';
-import { PRODUCT_STATUSES, dbErrorMessage, filterProductRows, productListRow } from './logic.js';
+import {
+  PRODUCT_STATUSES, STORAGE_CLEANUP_NOTE, dbErrorMessage, filterProductRows, productDeleteConfirmation, productListRow
+} from './logic.js';
 import { debounce, emptyHTML, loadInto, optionsHTML, productStatusChip, tableHTML, thumbHTML } from './ui.js';
 
-function productsTableHTML(rows) {
+function actionsHTML(row, deleting) {
+  const href = `#/produtos/${encodeURIComponent(row.id)}`;
+  const name = escapeHTML(row.name || '(sem nome)');
+  const busy = deleting.has(row.id);
+  return `<div class="cell-actions">`
+    + `<a class="btn btn-small" href="${href}">Editar<span class="sr-only"> ${name}</span></a>`
+    + `<button type="button" class="btn btn-small btn-danger-ghost" data-delete="${escapeHTML(row.id)}"${busy ? ' disabled' : ''}>`
+    + `${busy ? 'A apagar…' : 'Apagar'}<span class="sr-only"> ${name}</span></button>`
+    + `</div>`;
+}
+
+function productsTableHTML(rows, deleting) {
   return tableHTML({
     caption: 'Produtos',
     columns: [
       { label: 'Imagem', className: 'col-thumb' }, { label: 'Nome' }, { label: 'Categoria' },
-      { label: 'Preço', className: 'num' }, { label: 'Stock', className: 'num' }, { label: 'Estado' }, { label: 'Destaque' }
+      { label: 'Preço', className: 'num' }, { label: 'Stock', className: 'num' }, { label: 'Estado' }, { label: 'Destaque' },
+      { label: 'Ações', className: 'col-actions' }
     ],
     rows: rows.map(row => [
       { html: thumbHTML(row.thumb) },
@@ -19,7 +33,8 @@ function productsTableHTML(rows) {
       { html: row.basePrice === null ? '<span class="muted">Sem preço</span>' : escapeHTML(row.priceLabel) },
       { html: escapeHTML(row.stockLabel) },
       { html: productStatusChip(row.status) },
-      { html: row.featured ? '<span class="featured">★ Sim</span>' : '<span class="muted">Não</span>' }
+      { html: row.featured ? '<span class="featured">★ Sim</span>' : '<span class="muted">Não</span>' },
+      { html: actionsHTML(row, deleting) }
     ])
   });
 }
@@ -55,6 +70,8 @@ export function renderProducts(ctx) {
   const form = ctx.main.querySelector('[data-filters]');
   const region = ctx.main.querySelector('[data-region]');
   const count = ctx.main.querySelector('[data-count]');
+  const heading = ctx.main.querySelector('h1');
+  const deleting = new Set();
   let rows = null;
 
   const announce = debounce(text => { count.textContent = text; }, 400);
@@ -68,13 +85,61 @@ export function renderProducts(ctx) {
     } else if (!visible.length) {
       region.innerHTML = emptyHTML('Nenhum produto corresponde aos filtros.');
     } else {
-      region.innerHTML = productsTableHTML(visible);
+      region.innerHTML = productsTableHTML(visible, deleting);
     }
     announce(rows.length ? `${pluralize(visible.length, 'produto', 'produtos')} de ${rows.length}.` : '');
   }
 
+  // O botão apagado desaparece: o foco passa para o "Apagar" da linha seguinte (ou anterior), senão para o título.
+  function focusAfterRemoval(index) {
+    const buttons = [...region.querySelectorAll('[data-delete]:not([disabled])')];
+    (buttons[index] ?? buttons[index - 1] ?? heading).focus();
+  }
+
+  async function removeProduct(button) {
+    const id = button.dataset.delete;
+    const row = rows?.find(item => item.id === id);
+    if (!row || deleting.has(id)) return;
+    const name = row.name.trim() || 'este produto';
+    if (!window.confirm(productDeleteConfirmation(name))) return;
+    const index = [...region.querySelectorAll('[data-delete]')].indexOf(button);
+    deleting.add(id);
+    paint();
+    ctx.flash(`A apagar “${name}”…`, 'info');
+
+    try {
+      await ctx.api.deleteProduct(id);
+    } catch (error) {
+      console.error(error);
+      deleting.delete(id);
+      if (!ctx.alive()) return;
+      paint();
+      ctx.flash(`Não foi possível apagar “${name}”. ${dbErrorMessage(error)}`, 'error');
+      region.querySelector(`[data-delete="${CSS.escape(id)}"]`)?.focus();
+      return;
+    }
+
+    let message = `Produto “${name}” apagado.`;
+    try {
+      await ctx.api.removeProductFolder(id);
+    } catch (error) {
+      console.warn('Limpeza do Storage falhou', error);
+      message += STORAGE_CLEANUP_NOTE;
+    }
+    deleting.delete(id);
+    rows = rows.filter(item => item.id !== id);
+    if (!ctx.alive()) return;
+    paint();
+    ctx.flash(message, 'success');
+    focusAfterRemoval(index);
+  }
+
   form.addEventListener('submit', event => event.preventDefault());
   form.addEventListener('input', paint);
+  region.addEventListener('click', event => {
+    const button = event.target.closest('[data-delete]');
+    if (button && !button.disabled) removeProduct(button);
+  });
 
   loadInto(region, {
     load: () => ctx.api.listProducts(),

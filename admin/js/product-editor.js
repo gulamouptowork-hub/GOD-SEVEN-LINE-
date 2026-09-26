@@ -5,10 +5,10 @@ import { SITE_CONFIG } from '/config/site.js';
 import { escapeHTML } from '/js/lib/html.js';
 import { resolveImage } from '/js/lib/images.js';
 import {
-  IMAGE_FIELDS, LIMITS, ORDER_MODES, PRODUCT_STATUSES, QUICK_SIZES, VARIANT_FIELDS,
+  IMAGE_FIELDS, LIMITS, ORDER_MODES, PRODUCT_STATUSES, QUICK_SIZES, STORAGE_CLEANUP_NOTE, VARIANT_FIELDS,
   applyNameChange, applySlugChange, applySyncResult, createKeyFactory, dbErrorMessage, emptyProductForm,
   formSnapshot, generateSizeRows, imageRowsFromDb, isUuid, moveItem, newImageEntry, newVariantEntry,
-  planSync, productFormFromDb, productStatusLabel, sizeOptions, storagePathFromPublicUrl, validateImageFile,
+  planSync, productDeleteConfirmation, productFormFromDb, productStatusLabel, sizeOptions, storagePathFromPublicUrl, validateImageFile,
   validateImageSource, validateImages, validateProductForm, validateVariants, variantRowsFromDb
 } from './logic.js';
 import { emptyHTML, loadInto, optionsHTML, productStatusChip, setFieldError } from './ui.js';
@@ -608,13 +608,7 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
 
   async function removeProduct() {
     const name = state.form.name.trim() || 'este produto';
-    const confirmed = window.confirm(
-      `Apagar definitivamente “${name}”?\n\n`
-      + 'As imagens e variantes deste produto também serão apagadas. O histórico de pedidos mantém-se: '
-      + 'cada pedido guarda uma cópia do nome, cor, tamanho e preço no momento da compra.\n\n'
-      + 'Se só queres retirá-lo da loja, usa “Arquivar”.'
-    );
-    if (!confirmed) return;
+    if (!window.confirm(productDeleteConfirmation(name))) return;
     state.saving = true;
     paintActions();
     setStatus('A apagar…');
@@ -632,7 +626,7 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
       await ctx.api.removeProductFolder(state.form.id);
     } catch (error) {
       console.warn('Limpeza do Storage falhou', error);
-      message += ' Os ficheiros de imagem no Storage não foram removidos (podes apagá-los no painel do Supabase).';
+      message += STORAGE_CLEANUP_NOTE;
     }
     state.deleted = true;
     ctx.setGuard(null);

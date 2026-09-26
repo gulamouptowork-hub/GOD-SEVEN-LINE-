@@ -255,6 +255,17 @@ export function productListRow(row) {
   };
 }
 
+// Textos de "apagar produto", partilhados pela lista e pelo editor.
+export function productDeleteConfirmation(name) {
+  const label = String(name ?? '').trim() || 'este produto';
+  return `Apagar definitivamente “${label}”?\n\n`
+    + 'As imagens e variantes deste produto também serão apagadas. O histórico de pedidos mantém-se: '
+    + 'cada pedido guarda uma cópia do nome, cor, tamanho e preço no momento da compra.\n\n'
+    + 'Se só queres retirá-lo da loja, abre o produto e usa “Arquivar”.';
+}
+
+export const STORAGE_CLEANUP_NOTE = ' Os ficheiros de imagem no Storage não foram removidos (podes apagá-los no painel do Supabase).';
+
 export function filterProductRows(rows, { q = '', category = '', status = '' } = {}) {
   const tokens = normalizeSearch(q).split(/\s+/).filter(Boolean);
   return rows.filter(row => (!category || row.category === category)

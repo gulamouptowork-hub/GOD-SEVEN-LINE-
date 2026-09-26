@@ -5,7 +5,7 @@ import {
   applyNameChange, applySlugChange, applySyncResult, authErrorMessage, buildStockGroups, collectStockEdits,
   compareSizes, createKeyFactory, customerWhatsAppURL, dbErrorMessage, emptyProductForm, filterProductRows,
   filterStockGroups, formSnapshot, generateSizeRows, isUuid, moveItem, newVariantEntry, orderDetailFromDb,
-  orderItemCount, orderListRow, orderSearchFilter, parseRoute, parseWholeNumber, planSync, productFormFromDb,
+  orderItemCount, orderListRow, orderSearchFilter, parseRoute, parseWholeNumber, planSync, productDeleteConfirmation, productFormFromDb,
   productListRow, sizeOptions, stepStock, stockStatus, stockStatusLabel, stockSummaryLabel,
   storagePathFromPublicUrl, summarizeVariantStock, totalStock, uploadPath, uuid, validateImageFile,
   validateImageSource, validateImages, validateProductForm, validateVariants, variantRowsFromDb
@@ -189,6 +189,16 @@ test('filterProductRows combina pesquisa, categoria e estado', () => {
   assert.equal(filterProductRows(rows, { category: 't-shirts' })[0].slug, 't-shirt-seven');
   assert.equal(filterProductRows(rows, { status: 'active' }).length, 1);
   assert.equal(filterProductRows(rows, { q: 'personalização' }).length, 0);
+});
+
+test('productDeleteConfirmation nomeia o produto e avisa o que se mantém', () => {
+  const text = productDeleteConfirmation('  Polo Seven ');
+  assert.match(text, /^Apagar definitivamente “Polo Seven”\?/);
+  assert.match(text, /imagens e variantes/);
+  assert.match(text, /histórico de pedidos mantém-se/);
+  assert.match(text, /Arquivar/);
+  assert.match(productDeleteConfirmation(''), /“este produto”/);
+  assert.match(productDeleteConfirmation(null), /“este produto”/);
 });
 
 test('slug é gerado do nome até ser editado à mão', () => {
