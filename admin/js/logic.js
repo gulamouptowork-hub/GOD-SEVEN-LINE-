@@ -813,6 +813,43 @@ export function authErrorMessage(error) {
   return 'Não foi possível entrar. Tenta novamente.';
 }
 
+// ─── Verificação em dois passos (TOTP) e sessão ──────────────────────────────
+
+export const MFA_FRIENDLY_NAME = 'God Seven Line';
+export const IDLE_LIMIT_MS = 60 * 60 * 1000; // 60 min sem atividade → sessão terminada
+
+// "123 456", "123-456" → "123456"; null se não tiver exatamente 6 algarismos.
+export function normalizeTotpCode(input) {
+  const digits = String(input ?? '').replace(/[\s-]/g, '');
+  return /^\d{6}$/.test(digits) ? digits : null;
+}
+
+// Chave para introduzir à mão na app, em grupos de 4 ("JBSW Y3DP …").
+export const formatTotpSecret = secret => String(secret ?? '').replace(/\s+/g, '').replace(/(.{4})(?=.)/g, '$1 ');
+
+// Sessões antigas do supabase-js guardadas em localStorage (antes de a sessão passar a durar só enquanto o browser
+// estiver aberto): chaves "sb-<projeto>-auth-token".
+export const isPersistentAuthKey = key => /^sb-[a-z0-9-]+-auth-token(?:-code-verifier)?$/i.test(String(key ?? ''));
+
+export function isIdleExpired(lastActivity, now = Date.now(), limit = IDLE_LIMIT_MS) {
+  return Number.isFinite(lastActivity) && now - lastActivity >= limit;
+}
+
+export function mfaErrorMessage(error) {
+  const code = String(error?.code ?? '');
+  const message = String(error?.message ?? '').toLowerCase();
+  if (code === 'mfa_verification_failed' || message.includes('invalid totp') || message.includes('invalid code')) {
+    return 'Código incorreto. Confirma que usas o código de “God Seven Line” e que a hora do telemóvel está certa (automática).';
+  }
+  if (code === 'mfa_challenge_expired' || message.includes('expired')) return 'O código expirou. Escreve o código novo que a app mostra agora.';
+  if (error?.status === 429 || code.includes('rate_limit') || message.includes('rate limit')) return 'Demasiadas tentativas. Espera um minuto e tenta novamente.';
+  if (code === 'mfa_totp_enroll_not_enabled' || message.includes('mfa') && message.includes('disabled')) {
+    return 'A verificação em dois passos está desligada no Supabase (Authentication → Multi-Factor → TOTP).';
+  }
+  if (error?.name === 'AuthRetryableFetchError' || message.includes('failed to fetch') || message.includes('network')) return 'Sem ligação ao servidor. Verifica a tua internet.';
+  return 'Não foi possível confirmar o código. Tenta novamente.';
+}
+
 export function dbErrorMessage(error) {
   if (!error) return 'Ocorreu um erro inesperado.';
   const code = String(error.code ?? '');
@@ -830,7 +867,7 @@ export function dbErrorMessage(error) {
   if (code === '22P02') return 'Identificador inválido.';
   if (code === 'NO_ROWS') return 'Nada foi alterado: o registo já não existe ou a tua conta não tem permissão.';
   if (code === '42501' || text.includes('row-level security') || text.includes('permission denied') || text.includes('unauthorized')) {
-    return 'Sem permissão para esta operação. Confirma que a tua conta está na tabela admin_users.';
+    return 'Sem permissão para esta operação. Confirma que a tua conta está na tabela admin_users e que entraste com o código de verificação (sai e entra de novo).';
   }
   if (code === 'PGRST301' || code === 'PGRST303' || text.includes('jwt expired')) return 'A sessão expirou. Sai e entra novamente.';
   if (text.includes('bucket not found')) return `O bucket "${UPLOAD.bucket}" não existe no Supabase Storage (ver supabase/schema.sql).`;

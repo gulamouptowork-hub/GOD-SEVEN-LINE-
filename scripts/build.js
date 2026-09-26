@@ -96,6 +96,8 @@ copy('styles');
 copy('js');
 copy('admin');
 copy('config/site.js');
+copy('manifest.webmanifest');
+copy('offline.html');
 write('config/runtime.js', `// Gerado por scripts/build.js — não editar.\nexport const RUNTIME_CONFIG = Object.freeze(${JSON.stringify(runtime, null, 2)});\n`);
 // Só os produtos ativos: rascunhos e arquivados nunca ficam públicos.
 write('data/products.json', `${JSON.stringify(localRaw.filter(product => product.status === 'active'), null, 2)}\n`);
@@ -153,6 +155,11 @@ page('404.html', '/404', { page: 'not-found', title: 'Página não encontrada', 
 write('robots.txt', `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /finalizar\nSitemap: ${SITE_CONFIG.siteUrl}/sitemap.xml\n`);
 write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
   .map(url => `  <url><loc>${SITE_CONFIG.siteUrl}${url === '/' ? '/' : url}</loc></url>`).join('\n')}\n</urlset>\n`);
+
+// Aplicação instalável: cada build recebe uma cache nova; o painel /admin e runtime.js nunca são guardados.
+const serviceWorker = fs.readFileSync(path.join(root, 'service-worker.js'), 'utf8')
+  .replace('__GSL_CACHE_VERSION__', now.toISOString().replace(/\D/g, ''));
+write('service-worker.js', serviceWorker);
 
 console.log(`✓ dist/ gerado — ${pages.length} páginas indexáveis, ${products.length} produtos${demo ? ' (MODO DEMONSTRAÇÃO)' : ''}`);
 const MODES = { supabase: 'Supabase', fallback: 'Supabase (páginas estáticas de data/products.json — Supabase inacessível no build)', local: 'local (sem backend)' };

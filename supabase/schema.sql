@@ -186,7 +186,9 @@ create trigger orders_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------
--- 7. is_admin(): o utilizador autenticado está em admin_users?
+-- 7. is_admin(): o utilizador autenticado está em admin_users E entrou com o código da app de
+--    autenticação (verificação em dois passos: a sessão tem aal = 'aal2')?
+--    Só com a palavra-passe (aal1) nenhuma regra de administrador se aplica: não lê pedidos nem altera nada.
 --    security definer para ler admin_users sem depender das políticas RLS.
 -- ---------------------------------------------------------------------
 
@@ -197,7 +199,8 @@ stable
 security definer
 set search_path = public
 as $$
-  select exists (select 1 from public.admin_users where user_id = auth.uid());
+  select coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
+     and exists (select 1 from public.admin_users where user_id = auth.uid());
 $$;
 
 -- ---------------------------------------------------------------------

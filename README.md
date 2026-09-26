@@ -2,6 +2,8 @@
 
 Marca + coleção + pedido + gestão de stock, com finalização pelo WhatsApp.
 Site estático gerado por Node (sem framework, sem dependências de runtime), publicado na Vercel.
+Também é uma aplicação instalável (PWA): Android, iPhone e computadores podem adicioná-la ao ecrã
+principal, e as páginas visitadas continuam disponíveis quando a ligação falha.
 
 ```
 HOME → COLEÇÃO → PRODUTO → COR / TAMANHO / QUANTIDADE → ADICIONAR AO PEDIDO
@@ -33,3 +35,12 @@ Precisa do Node.js 22 ou mais recente (ver `engines` em `package.json`).
 
 > Os preços e o stock reais ainda não foram fornecidos: as peças mostram "Preço sob consulta" e um botão
 > para perguntar no WhatsApp até serem configurados. Nenhum preço foi inventado.
+
+## Instalar como aplicação
+
+* **Android / Chrome:** abre o site e usa **Instalar aplicação** no rodapé ou no menu do navegador.
+* **iPhone / Safari:** toca em **Partilhar → Adicionar ao ecrã principal**.
+* **Computador / Chrome ou Edge:** usa o ícone de instalação na barra de endereço.
+
+O `manifest.webmanifest` define nome, ícones e atalhos. O `service-worker.js` guarda apenas a loja
+pública; `/admin` e `config/runtime.js` ficam sempre fora da cache offline.

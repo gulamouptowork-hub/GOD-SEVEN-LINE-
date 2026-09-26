@@ -49,7 +49,7 @@ function mobileMenu(page) {
   </div>
   <nav class="mobile-menu__nav" aria-label="Menu">${NAV.map((item, index) => `<a href="${item.href}"${current(item, page)}><small>0${index + 1}</small>${item.label}</a>`).join('')}</nav>
   <div class="mobile-menu__footer">
-    <nav aria-label="Mais">${SECONDARY_NAV.map(item => `<a href="${item.href}">${item.label}</a>`).join('')}<a href="${SITE_CONFIG.social.instagram.url}" target="_blank" rel="noopener">Instagram ↗</a></nav>
+    <nav aria-label="Mais">${SECONDARY_NAV.map(item => `<a href="${item.href}">${item.label}</a>`).join('')}<a href="${SITE_CONFIG.social.instagram.url}" target="_blank" rel="noopener">Instagram ↗</a><button type="button" data-install-app hidden>Instalar aplicação ↓</button></nav>
     <p>Não seguimos tendências. Criamos.</p>
   </div>
 </dialog>`;
@@ -96,7 +96,7 @@ function footer({ communityBand = true } = {}) {
   <div class="footer-top">
     <a class="wordmark" href="/">GOD SEVEN<span>LINE®</span></a>
     <p>Não seguimos tendências. Criamos.<br>De Moçambique, com propósito.</p>
-    <nav aria-label="Rodapé"><a href="/produtos">Coleção</a><a href="/servicos">Personalização</a><a href="/sobre">A nossa história</a><a href="/contactos">Contactos</a><a href="/Localizacao">Localização</a><a href="${instagram.url}" target="_blank" rel="noopener">Instagram ↗</a></nav>
+    <nav aria-label="Rodapé"><a href="/produtos">Coleção</a><a href="/servicos">Personalização</a><a href="/sobre">A nossa história</a><a href="/contactos">Contactos</a><a href="/Localizacao">Localização</a><a href="${instagram.url}" target="_blank" rel="noopener">Instagram ↗</a><button type="button" data-install-app hidden>Instalar aplicação ↓</button></nav>
   </div>
   <div class="footer-bottom"><span>© ${new Date().getFullYear()} ${SITE_CONFIG.brandName}</span><span>Cada linha conta uma história.</span><a href="#top">Voltar ao topo ↑</a></div>
 </footer>`;
@@ -121,6 +121,10 @@ export function layout({
 <meta name="description" content="${escapeHTML(desc)}">
 ${noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" href="${escapeHTML(canonical)}">`}
 <meta name="theme-color" content="#f5f3ed">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="God Seven Line">
 <meta property="og:site_name" content="${SITE_CONFIG.brandName}">
 <meta property="og:locale" content="pt_PT">
 <meta property="og:type" content="${ogType}">
@@ -132,6 +136,7 @@ ${noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" hr
 <link rel="icon" href="/assets/icons/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="/assets/icons/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&amp;family=DM+Sans:wght@400;500;600;700&amp;display=swap">
@@ -153,6 +158,17 @@ ${footer({ communityBand })}
 ${mobileMenu(page)}
 ${cartDrawer()}
 ${searchDialog()}
+<dialog class="install-dialog" data-install-dialog aria-labelledby="install-app-title">
+  <button class="icon-button install-dialog__close" type="button" data-dialog-close aria-label="Fechar">${icon('close')}</button>
+  <p class="eyebrow">GOD SEVEN LINE · APP</p>
+  <h2 id="install-app-title">Instala no teu iPhone</h2>
+  <ol>
+    <li>No Safari, toca em <strong>Partilhar</strong> <span aria-hidden="true">□↑</span>.</li>
+    <li>Escolhe <strong>Adicionar ao ecrã principal</strong>.</li>
+    <li>Confirma em <strong>Adicionar</strong>.</li>
+  </ol>
+  <p>A loja abre como uma aplicação e mantém disponíveis as páginas que já visitaste.</p>
+</dialog>
 <div class="toast-region" data-toast-region aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

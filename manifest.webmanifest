@@ -1,0 +1,23 @@
+{
+  "id": "/",
+  "name": "God Seven Line",
+  "short_name": "G7L",
+  "description": "Streetwear moçambicano com identidade. Descobre a coleção e monta o teu pedido.",
+  "lang": "pt-MZ",
+  "dir": "ltr",
+  "start_url": "/?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f3ed",
+  "theme_color": "#20221e",
+  "categories": ["shopping", "lifestyle"],
+  "icons": [
+    { "src": "/assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Ver coleção", "short_name": "Coleção", "url": "/produtos?source=app", "icons": [{ "src": "/assets/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Personalização", "short_name": "Personalizar", "url": "/servicos?source=app", "icons": [{ "src": "/assets/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "O meu pedido", "short_name": "Pedido", "url": "/finalizar?source=app", "icons": [{ "src": "/assets/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

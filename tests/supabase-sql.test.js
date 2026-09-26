@@ -20,6 +20,7 @@ test('supabase: schema, seed, create_order, RLS e storage', { skip: PGlite ? fal
     create schema auth;
     create table auth.users (id uuid primary key default gen_random_uuid(), email text);
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
     create schema storage;
     create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[], owner uuid, created_at timestamptz default now(), updated_at timestamptz default now());
     create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text, owner uuid, metadata jsonb, created_at timestamptz default now());
@@ -34,6 +35,10 @@ test('supabase: schema, seed, create_order, RLS e storage', { skip: PGlite ? fal
   ok('schema.sql executa sem erros');
   await db.exec(schema);
   ok('schema.sql é re-executável (2.ª execução sem erros)');
+  const twoFactor = fs.readFileSync(`${ROOT}/supabase/admin-2fa.sql`, 'utf8');
+  await db.exec(twoFactor);
+  await db.exec(twoFactor);
+  ok('admin-2fa.sql (migração para bases existentes) executa e é re-executável');
   const seed = fs.readFileSync(`${ROOT}/supabase/seed.sql`, 'utf8');
   await db.exec(seed);
   const counts = (await db.query(`select (select count(*) from products)::int p, (select count(*) from product_images)::int i, (select count(*) from product_variants)::int v`)).rows[0];
@@ -60,9 +65,10 @@ test('supabase: schema, seed, create_order, RLS e storage', { skip: PGlite ? fal
 
   const customer = { name: 'João Mussa', phone: '84 123 4567', location: 'Maputo', delivery_type: 'entrega', notes: "Portão verde & 'casa' #2" };
 
-  async function asRole(role, fn, sub = '') {
+  async function asRole(role, fn, sub = '', aal = 'aal2') {
     await db.exec(`set role ${role}`);
     await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [sub]);
+    await db.query(`select set_config('request.jwt.claims', $1, false)`, [sub ? JSON.stringify({ sub, role, aal }) : '']);
     try { return await fn(); } finally { await db.exec('reset role'); }
   }
   async function order(items, expected = null, c = customer) {
@@ -151,6 +157,17 @@ test('supabase: schema, seed, create_order, RLS e storage', { skip: PGlite ? fal
   assert.equal((await db.query(`select stock from product_variants where id = $1`, [sigM])).rows[0].stock, 7);
   assert.ok(await asRole('authenticated', async () => { try { await db.query(`insert into admin_users (user_id, email) values ($1, 'x')`, [other]); return false; } catch { return true; } }, other));
   ok('utilizador autenticado sem admin_users não vê pedidos, não altera stock, não se promove');
+  // Verificação em dois passos: o admin só com a palavra-passe (aal1) não tem poderes de administrador
+  const onlyPassword = (sql, params = []) => asRole('authenticated', () => db.query(sql, params), admin, 'aal1');
+  assert.equal((await onlyPassword('select public.is_admin() as ok')).rows[0].ok, false);
+  assert.equal((await asRole('authenticated', () => db.query('select public.is_admin() as ok'), admin)).rows[0].ok, true);
+  assert.equal((await onlyPassword('select * from orders')).rows.length, 0);
+  assert.equal((await onlyPassword(`select slug from products where status = 'draft'`)).rows.length, 0);
+  await onlyPassword(`update product_variants set stock = 0 where id = $1`, [sigM]).catch(() => {});
+  assert.equal((await db.query(`select stock from product_variants where id = $1`, [sigM])).rows[0].stock, 7);
+  assert.equal((await onlyPassword('select user_id from admin_users')).rows.length, 1, 'continua a poder confirmar que é admin (para pedir o código)');
+  assert.ok(await asRole('authenticated', async () => { try { await db.query(`insert into storage.objects (bucket_id, name) values ('product-images', 'products/a/aal1.png')`); return false; } catch { return true; } }, admin, 'aal1'));
+  ok('admin sem o código (aal1): is_admin() falso, não vê pedidos nem rascunhos, não altera stock nem carrega imagens');
   const statusInvalid = await asRole('authenticated', async () => { try { await db.query(`update orders set status = 'enviado'`); return false; } catch { return true; } }, admin);
   assert.ok(statusInvalid);
   ok('estado de pedido fora da lista rejeitado');

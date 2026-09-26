@@ -27,6 +27,7 @@ test('supabase: analytics.sql — recolha, permissões e relatório', { skip: PG
     create schema auth;
     create table auth.users (id uuid primary key default gen_random_uuid(), email text);
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
     create schema storage;
     create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[], owner uuid, created_at timestamptz default now(), updated_at timestamptz default now());
     create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text, owner uuid, metadata jsonb, created_at timestamptz default now());
@@ -42,9 +43,10 @@ test('supabase: analytics.sql — recolha, permissões e relatório', { skip: PG
   await db.exec(analytics);
   ok('analytics.sql executa depois de schema.sql e é re-executável');
 
-  async function asRole(role, fn, sub = '') {
+  async function asRole(role, fn, sub = '', aal = 'aal2') {
     await db.exec(`set role ${role}`);
     await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [sub]);
+    await db.query(`select set_config('request.jwt.claims', $1, false)`, [sub ? JSON.stringify({ sub, role, aal }) : '']);
     try { return await fn(); } finally { await db.exec('reset role'); }
   }
   const failure = async fn => { try { await fn(); return null; } catch (error) { return error.message; } };

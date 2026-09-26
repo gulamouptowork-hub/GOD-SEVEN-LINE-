@@ -7,6 +7,7 @@ import {
   filterStockGroups, formSnapshot, generateSizeRows, isUuid, moveItem, newVariantEntry, orderDetailFromDb,
   orderItemCount, orderListRow, orderSearchFilter, parseRoute, parseWholeNumber, planSync, productDeleteConfirmation, productFormFromDb,
   saleFromForm, saleFromRow, saleReadiness,
+  IDLE_LIMIT_MS, formatTotpSecret, isIdleExpired, isPersistentAuthKey, mfaErrorMessage, normalizeTotpCode,
   productListRow, resizePlan, settleStockEdits, sizeOptions, stepStock, stockStatus, stockStatusLabel, stockSummaryLabel,
   storagePathFromPublicUrl, summarizeVariantStock, totalStock, unusedStoragePaths, uploadPath, uuid, validateImageFile,
   validateImageSource, validateImages, validateProductForm, validateVariants, variantRowsFromDb
@@ -589,4 +590,28 @@ test('saleFromForm e saleFromRow convertem o formulário e a linha do Supabase',
   const rows = [productListRow({ ...productRow(), order_mode: 'cart', product_variants: [] }), productListRow({ ...productRow(), id: '2', slug: 'x', order_mode: 'cart', base_price: 100, product_variants: [{ stock: 2 }] })];
   assert.equal(filterProductRows(rows, { sale: 'cart' }).length, 1);
   assert.equal(filterProductRows(rows, { sale: 'inquiry' }).length, 1);
+});
+
+test('verificação em dois passos: código, chave, sessões antigas, inatividade e mensagens', () => {
+  assert.equal(normalizeTotpCode('123456'), '123456');
+  assert.equal(normalizeTotpCode(' 123 456 '), '123456');
+  assert.equal(normalizeTotpCode('123-456'), '123456');
+  assert.equal(normalizeTotpCode('12345'), null);
+  assert.equal(normalizeTotpCode('12a456'), null);
+  assert.equal(normalizeTotpCode(null), null);
+  assert.equal(formatTotpSecret('JBSWY3DPEHPK3PXP'), 'JBSW Y3DP EHPK 3PXP');
+  assert.equal(formatTotpSecret(' JBSW Y3DP '), 'JBSW Y3DP');
+  assert.equal(isPersistentAuthKey('sb-vxoqhpsjqgmwxrllcdbr-auth-token'), true);
+  assert.equal(isPersistentAuthKey('sb-vxoqhpsjqgmwxrllcdbr-auth-token-code-verifier'), true);
+  assert.equal(isPersistentAuthKey('gsl-cart-v2'), false);
+  assert.equal(isPersistentAuthKey('gsl-no-track'), false);
+  const now = 10 * IDLE_LIMIT_MS;
+  assert.equal(isIdleExpired(now - IDLE_LIMIT_MS + 1000, now), false);
+  assert.equal(isIdleExpired(now - IDLE_LIMIT_MS, now), true);
+  assert.equal(isIdleExpired(NaN, now), false);
+  assert.match(mfaErrorMessage({ code: 'mfa_verification_failed', message: 'Invalid TOTP code entered' }), /Código incorreto/);
+  assert.match(mfaErrorMessage({ code: 'mfa_challenge_expired' }), /expirou/);
+  assert.match(mfaErrorMessage({ status: 429, message: 'rate limit' }), /Demasiadas tentativas/);
+  assert.match(mfaErrorMessage({ message: 'MFA enroll is disabled for TOTP' }), /desligada no Supabase/);
+  assert.match(mfaErrorMessage({ name: 'AuthRetryableFetchError' }), /Sem ligação/);
 });

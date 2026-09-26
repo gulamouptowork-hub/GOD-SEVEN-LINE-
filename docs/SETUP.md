@@ -202,6 +202,34 @@ Limites contra abusos (em `track_events`): 120 eventos por visitante em 10 minut
 Os dados não expiram sozinhos; para apagar eventos antigos, corre de vez em quando no SQL Editor:
 `delete from public.analytics_events where created_at < now() - interval '13 months';`
 
+### 3.8 Código de acesso ao painel (verificação em dois passos)
+
+O `/admin` pede a palavra-passe **e** um código de 6 dígitos de uma app de autenticação no telemóvel
+(Google Authenticator ou Microsoft Authenticator, grátis). A sessão dura só enquanto o browser estiver aberto
+e termina depois de 60 minutos sem mexer no painel.
+
+1. Confirma no Supabase que a opção está ligada: **Authentication → Multi-Factor → TOTP (App Authenticator)**
+   (vem ligada por omissão).
+2. Entra no `/admin`. Na 1.ª vez aparece **“Ativar verificação em dois passos”**: na app do telemóvel carrega
+   em **+ → Ler código QR**, aponta para o código e escreve o número de 6 dígitos que a app mostra.
+3. Depois de ativar, corre no **SQL Editor** o ficheiro `supabase/admin-2fa.sql` (já incluído no `schema.sql`
+   para bases novas). A partir daí o próprio Supabase recusa ler pedidos ou alterar produtos, stock e imagens
+   a quem só tenha a palavra-passe.
+
+Cada pessoa da equipa ativa o seu próprio telemóvel na sua primeira entrada.
+
+#### Perdi o telemóvel
+
+Sem a app não é possível entrar. Para voltar a ativar num telemóvel novo, no **SQL Editor** corre (com o teu email):
+
+```sql
+delete from auth.mfa_factors
+where user_id = (select id from auth.users where email = 'o-teu-email@exemplo.com');
+```
+
+Na entrada seguinte o painel volta a mostrar o ecrã de ativação com um código QR novo. Se desconfiares que alguém
+soube a tua palavra-passe, muda-a também em **Authentication → Users**.
+
 ---
 
 ## 4. Publicar na Vercel

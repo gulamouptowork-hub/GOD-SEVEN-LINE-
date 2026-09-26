@@ -1,5 +1,6 @@
 // Ponto de entrada da loja pública (todas as páginas).
 import { initAnalytics } from './analytics.js';
+import { initPWA } from './pwa.js';
 import { catalog } from './app-context.js';
 import { setupCartUI } from './ui/cart-drawer.js';
 import { setupDialogs } from './ui/dialogs.js';
@@ -8,6 +9,7 @@ import { setupReveal } from './ui/reveal.js';
 import { setupSearch } from './ui/search.js';
 
 initAnalytics();
+initPWA();
 setupDialogs();
 setupHeader();
 setupCartUI();

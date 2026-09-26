@@ -40,7 +40,7 @@ const jsonLDBlocks = html => [...html.matchAll(/<script type="application\/ld\+j
 
 test('build real: páginas, SEO e nenhum preço inventado', () => {
   const site = build();
-  for (const file of ['index.html', 'produtos.html', 'finalizar.html', 'produto.html', '404.html', 'servicos.html', 'sobre.html', 'Localizacao.html', 'contactos.html', 'sitemap.xml', 'robots.txt', 'config/runtime.js', 'admin/index.html']) {
+  for (const file of ['index.html', 'produtos.html', 'finalizar.html', 'produto.html', '404.html', 'servicos.html', 'sobre.html', 'Localizacao.html', 'contactos.html', 'offline.html', 'manifest.webmanifest', 'service-worker.js', 'sitemap.xml', 'robots.txt', 'config/runtime.js', 'admin/index.html']) {
     assert.ok(fs.existsSync(path.join(site.out, file)), file);
   }
   const polo = site.read('produtos/polo-seven.html');
@@ -60,6 +60,15 @@ test('build real: páginas, SEO e nenhum preço inventado', () => {
   assert.match(runtime, /"supabaseUrl": ""/);
   assert.match(runtime, /"demo": false/);
   assert.doesNotMatch(site.read('index.html'), /MODO DEMONSTRAÇÃO/);
+  assert.match(site.read('index.html'), /rel="manifest" href="\/manifest\.webmanifest"/);
+  assert.match(site.read('index.html'), /data-install-app/);
+  const manifest = JSON.parse(site.read('manifest.webmanifest'));
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.start_url, '/?source=app');
+  assert.deepEqual(manifest.icons.map(icon => icon.sizes), ['192x192', '512x512']);
+  const worker = site.read('service-worker.js');
+  assert.doesNotMatch(worker, /__GSL_CACHE_VERSION__/);
+  assert.match(worker, /pathname\.startsWith\('\/admin'\)/);
   fs.rmSync(site.out, { recursive: true, force: true });
 });
 
@@ -126,6 +135,7 @@ test('layout: botão de pesquisa com nome acessível e .reveal só escondido qua
 test('data/products.json publicado só tem produtos ativos (rascunhos nunca ficam públicos)', () => {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'gsl-project-'));
   for (const dir of ['scripts', 'config', 'js']) fs.cpSync(path.join(root, dir), path.join(project, dir), { recursive: true });
+  for (const file of ['service-worker.js', 'manifest.webmanifest', 'offline.html']) fs.copyFileSync(path.join(root, file), path.join(project, file));
   const catalog = JSON.parse(fs.readFileSync(path.join(root, 'data/products.json'), 'utf8'));
   const draft = { ...catalog[0], id: 'drop-secreto', slug: 'drop-secreto-2027', name: 'Drop secreto', status: 'draft', basePrice: 1999, variants: [] };
   const archived = { ...catalog[0], id: 'antigo', slug: 'peca-antiga', name: 'Peça antiga', status: 'archived', variants: [] };
