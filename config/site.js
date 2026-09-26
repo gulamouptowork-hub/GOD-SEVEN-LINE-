@@ -13,7 +13,10 @@ export const SITE_CONFIG = Object.freeze({
   whatsappNumber: '258870204282',
   contact: Object.freeze({
     phoneDisplay: '+258 87 020 4282',
+    // Ao mudar a morada, atualizar também addressTitle (título da página Localização; \n = mudança de linha)
+    // e a indicação de levantamento em deliveryOptions.
     address: 'Vila da Manhiça, em frente ao Millennium BIM',
+    addressTitle: 'Em frente ao\nMillennium BIM.',
     city: 'Vila da Manhiça, Moçambique',
     hours: Object.freeze([
       Object.freeze({ days: 'Segunda — Sexta', time: '08h00 — 17h00' }),
@@ -51,7 +54,10 @@ export const SITE_CONFIG = Object.freeze({
     Object.freeze({ id: 'mais-2000', label: 'Mais de 2.000 MT', min: 2000, max: null })
   ]),
 
-  // Entrega: sem taxas configuradas. Quando existirem, definir deliveryFees e o total passa a incluí-las.
+  // Entrega: sem taxas configuradas. Quando existirem, definir deliveryFees ({ <id da opção>: valor em MT }):
+  // resumo, mensagem e total passam a incluí-las (lidas só por deliveryFeeFor em js/lib/order.js).
+  // A create_order (supabase/schema.sql) ainda não conhece taxas — valida só o subtotal das peças e grava
+  // delivery_fee = null —, por isso o schema tem de ser atualizado para o pedido guardado incluir a taxa.
   deliveryOptions: Object.freeze([
     Object.freeze({ id: 'levantamento', label: 'Levantamento', hint: 'Levantar na loja — Vila da Manhiça', requiresLocation: false }),
     Object.freeze({ id: 'entrega', label: 'Entrega', hint: 'Receber no endereço — combinado pelo WhatsApp', requiresLocation: true })

@@ -11,7 +11,7 @@ export const IMAGE_MANIFEST = Object.freeze({
   },
   "tee-verde-modelo": {
     "width": 1080,
-    "height": 1350,
+    "height": 1240,
     "widths": [
       480,
       800,
@@ -20,7 +20,7 @@ export const IMAGE_MANIFEST = Object.freeze({
   },
   "tee-verde-detalhe": {
     "width": 548,
-    "height": 610,
+    "height": 546,
     "widths": [
       480,
       548
@@ -28,7 +28,7 @@ export const IMAGE_MANIFEST = Object.freeze({
   },
   "tee-verde-costas": {
     "width": 548,
-    "height": 615,
+    "height": 560,
     "widths": [
       480,
       548
@@ -68,7 +68,7 @@ export const IMAGE_MANIFEST = Object.freeze({
   },
   "personalizado-tee-sacola": {
     "width": 1244,
-    "height": 1600,
+    "height": 1495,
     "widths": [
       480,
       800,
@@ -84,7 +84,7 @@ export const IMAGE_MANIFEST = Object.freeze({
   },
   "tees-brancas-rua": {
     "width": 363,
-    "height": 432,
+    "height": 405,
     "widths": [
       363
     ]

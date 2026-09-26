@@ -3,7 +3,7 @@ import { filterProducts, productPriceLabel, productURL } from '../lib/catalog.js
 import { escapeHTML } from '../lib/html.js';
 import { imgHTML } from '../lib/images.js';
 import { $, on } from './dom.js';
-import { openModal } from './dialogs.js';
+import { closeModal, openModal } from './dialogs.js';
 import { icon } from './templates.js';
 
 const resultHTML = product => `<li><a class="search-result" href="${productURL(product)}">
@@ -45,6 +45,6 @@ export function setupSearch() {
   input.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
     event.preventDefault();
-    dialog.close();
+    closeModal(dialog);
   });
 }

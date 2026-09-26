@@ -98,7 +98,7 @@ h1:focus-visible, main:focus-visible { outline: 3px solid var(--focus); outline-
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
-.btn-primary:disabled:hover { background: var(--accent); }
+.btn-primary:disabled:hover, .btn-primary[aria-disabled="true"]:hover { background: var(--accent); }
 .btn-danger-ghost { color: var(--danger); border-color: #fca5a5; }
 .btn-danger-ghost:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
 .btn-whatsapp { background: #15803d; border-color: #15803d; color: #fff; }

@@ -37,6 +37,10 @@ export const UPLOAD = Object.freeze({
   types: Object.freeze({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' })
 });
 
+// Fotografias reduzidas no browser antes do upload (a loja mostra estes URLs sem srcset): lado maior até
+// maxSide px, em WebP. Ficheiros já pequenos em dimensões e em peso (até keepBytes) seguem como estão.
+export const IMAGE_RESIZE = Object.freeze({ maxSide: 1600, quality: 0.85, keepBytes: 400 * 1024, type: 'image/webp' });
+
 // Tamanhos criados pelo atalho "Gerar tamanhos" (S…XXL, na ordem da configuração central).
 export const QUICK_SIZES = Object.freeze(SITE_CONFIG.sizes.slice(
   Math.max(0, SITE_CONFIG.sizes.indexOf('S')),
@@ -97,6 +101,7 @@ export function parseRoute(hash) {
   }
   if (head === 'pedidos') return id ? route('order-detail', 'pedidos', { id }) : route('orders', 'pedidos');
   if (head === 'stock' && !id) return route('stock', 'stock');
+  if (head === 'visitantes' && !id) return route('visitors', 'visitantes');
   return route('not-found', null);
 }
 
@@ -230,6 +235,18 @@ export function collectStockEdits(original, raw) {
     else if (parsed.value !== original[id]) changes.push({ id, stock: parsed.value });
   }
   return { changes, invalid, dirty: changes.length > 0 || invalid.length > 0 };
+}
+
+// Depois de gravar: sent = texto enviado por id, saved = [{ id, stock }] confirmados pela base de dados.
+// Um campo alterado durante a gravação (texto diferente do enviado) continua por guardar, agora face ao valor gravado.
+export function settleStockEdits(original, raw, sent, saved) {
+  const nextOriginal = { ...original };
+  const nextRaw = { ...raw };
+  for (const { id, stock } of saved) {
+    nextOriginal[id] = stock;
+    if (Object.hasOwn(sent, id) && nextRaw[id] === sent[id]) delete nextRaw[id];
+  }
+  return { original: nextOriginal, raw: nextRaw };
 }
 
 // ─── Produtos: lista ─────────────────────────────────────────────────────────
@@ -557,6 +574,14 @@ export function validateImageFile(file) {
   return { ok: true, ext };
 }
 
+// Dimensões finais de uma fotografia antes do upload (nunca amplia), ou null se não valer a pena convertê-la.
+export function resizePlan({ width, height, size }, options = IMAGE_RESIZE) {
+  if (!(width > 0 && height > 0)) return null;
+  const scale = Math.min(1, options.maxSide / Math.max(width, height));
+  if (scale === 1 && size <= options.keepBytes) return null;
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
 // products/<product_id>/<timestamp>-<nome-em-slug>.<ext>
 export function uploadPath(productId, fileName, mimeType, now = Date.now()) {
   const ext = UPLOAD.types[mimeType];
@@ -577,6 +602,22 @@ export function storagePathFromPublicUrl(url, supabaseUrl, bucket = UPLOAD.bucke
   } catch {
     return null;
   }
+}
+
+// Caminhos do bucket que nenhum URL de imagem usa. Um ficheiro carregado num produto pode ter sido reutilizado
+// noutro ("Adicionar por URL"); qualquer URL que contenha /<bucket>/<caminho> conta (object/public, render/image…).
+export function unusedStoragePaths(paths, imageUrls, bucket = UPLOAD.bucket) {
+  const marker = `/${bucket}/`;
+  const used = new Set();
+  for (const url of imageUrls) {
+    const value = String(url ?? '').split(/[?#]/)[0];
+    const at = value.indexOf(marker);
+    if (at === -1) continue;
+    const path = value.slice(at + marker.length);
+    used.add(path);
+    try { used.add(decodeURIComponent(path)); } catch { /* fica o caminho tal como está */ }
+  }
+  return paths.filter(path => !used.has(path));
 }
 
 // ─── Pedidos ─────────────────────────────────────────────────────────────────
@@ -601,11 +642,14 @@ export function orderListRow(row) {
   };
 }
 
-// Filtro PostgREST "or" para pesquisa por número, nome ou telefone. Remove caracteres reservados da sintaxe.
-// Com 6+ algarismos também procura o telefone ignorando espaços (ex.: "841234567" encontra "84 123 4567").
+// Filtro PostgREST "or" para pesquisa por número, nome ou telefone. Remove caracteres reservados da sintaxe e o "#"
+// com que o número aparece no painel e no WhatsApp. Um número de pedido no texto ("Pedido: #GSL-0047") procura só
+// esse número. Com 6+ algarismos também procura o telefone ignorando espaços (ex.: "841234567" encontra "84 123 4567").
 export function orderSearchFilter(q) {
-  const term = String(q ?? '').replace(/[,()"'\\%*:.;]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const term = String(q ?? '').replace(/[#,()"'\\%*:.;]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
   if (!term) return '';
+  const number = term.match(/\bGSL-\d+/i);
+  if (number) return `order_number.ilike.*${number[0]}*`;
   const parts = [`order_number.ilike.*${term}*`, `customer_name.ilike.*${term}*`, `phone.ilike.*${term}*`];
   const digits = term.replace(/\D/g, '');
   if (digits.length >= 6) parts.push(`phone.ilike.*${digits.split('').join('*')}*`);

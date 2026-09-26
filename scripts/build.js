@@ -2,8 +2,10 @@
 //   node scripts/build.js          → catálogo real (data/products.json ou Supabase, se configurado)
 //   node scripts/build.js --demo   → catálogo de demonstração (tests/fixtures/products.demo.json) — nunca publicar
 //   --out <pasta>                  → gera noutra pasta (usado nos testes)
-// Variáveis de ambiente: SUPABASE_URL, SUPABASE_ANON_KEY, WHATSAPP_NUMBER (ver docs/SETUP.md).
+// Variáveis de ambiente: SUPABASE_URL, SUPABASE_ANON_KEY, WHATSAPP_NUMBER, ALLOW_LOCAL_FALLBACK (ver docs/SETUP.md).
 // Também aceita os nomes do exemplo do Supabase: NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.
+// Com o Supabase configurado mas inacessível, o build falha (a Vercel mantém o último deploy bom);
+// ALLOW_LOCAL_FALLBACK=1 gera as páginas estáticas a partir de data/products.json em vez de falhar.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +31,8 @@ const runtime = {
   demo
 };
 const whatsappNumber = runtime.whatsappNumber || SITE_CONFIG.whatsappNumber;
+const allowLocalFallback = /^(1|true|sim)$/i.test(env('ALLOW_LOCAL_FALLBACK'));
+const SUPABASE_TIMEOUT = 15000;
 
 const looksSecret = key => key.startsWith('sb_secret_') || /service_role/i.test(Buffer.from(key.split('.')[1] ?? '', 'base64').toString());
 if (runtime.supabaseAnonKey && looksSecret(runtime.supabaseAnonKey)) {
@@ -44,21 +48,27 @@ async function loadCatalog() {
     console.error(`✗ Catálogo inválido (${path.relative(root, file)}):\n  - ${errors.join('\n  - ')}`);
     process.exit(1);
   }
-  if (runtime.supabaseUrl && runtime.supabaseAnonKey) {
-    try {
-      const select = 'id,slug,name,description,category,product_type,base_price,status,featured,order_mode,tag,created_at,updated_at,product_images(image_url,alt_text,position,color),product_variants(id,color,size,stock,price_override,sku,position)';
-      const response = await fetch(`${runtime.supabaseUrl}/rest/v1/products?select=${select}&status=eq.active&order=created_at.desc.nullslast,name.asc`, {
-        headers: { apikey: runtime.supabaseAnonKey, ...(runtime.supabaseAnonKey.startsWith('eyJ') ? { Authorization: `Bearer ${runtime.supabaseAnonKey}` } : {}) }
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const rows = await response.json();
-      console.log(`• Catálogo do Supabase: ${rows.length} produtos`);
-      return { products: rows.map(mapSupabaseProduct), localRaw: local };
-    } catch (error) {
-      console.warn(`! Não foi possível ler o Supabase no build (${error.message}). A usar ${path.relative(root, file)} para as páginas estáticas.`);
+  const fromLocal = { products: local.map(normalizeProduct).filter(product => product.status === 'active'), localRaw: local, source: 'local' };
+  if (!(runtime.supabaseUrl && runtime.supabaseAnonKey)) return fromLocal;
+  try {
+    const select = 'id,slug,name,description,category,product_type,base_price,status,featured,order_mode,tag,created_at,updated_at,product_images(image_url,alt_text,position,color),product_variants(id,color,size,stock,price_override,sku,position)';
+    const response = await fetch(`${runtime.supabaseUrl}/rest/v1/products?select=${select}&status=eq.active&order=created_at.desc.nullslast,name.asc`, {
+      headers: { apikey: runtime.supabaseAnonKey, ...(runtime.supabaseAnonKey.startsWith('eyJ') ? { Authorization: `Bearer ${runtime.supabaseAnonKey}` } : {}) },
+      signal: AbortSignal.timeout(SUPABASE_TIMEOUT)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}${{ 401: ' — chave errada?', 404: ' — o schema.sql foi corrido?' }[response.status] ?? ''}`);
+    const rows = await response.json();
+    console.log(`• Catálogo do Supabase: ${rows.length} produtos`);
+    return { products: rows.map(mapSupabaseProduct), localRaw: local, source: 'supabase' };
+  } catch (error) {
+    const reason = error.name === 'TimeoutError' ? `sem resposta em ${SUPABASE_TIMEOUT / 1000} s` : [error.message, error.cause?.code ?? error.cause?.message].filter(Boolean).join(' · ');
+    if (!allowLocalFallback) {
+      console.error(`✗ Não foi possível ler o Supabase no build (${reason}).\n  O site não foi gerado: na Vercel, o último deploy bom continua publicado.\n  Confirma SUPABASE_URL e SUPABASE_ANON_KEY (docs/SETUP.md). Para gerar mesmo assim com ${path.relative(root, file)}: ALLOW_LOCAL_FALLBACK=1.`);
+      process.exit(1);
     }
+    console.warn(`! Não foi possível ler o Supabase no build (${reason}). ALLOW_LOCAL_FALLBACK=1: a usar ${path.relative(root, file)} para as páginas estáticas.`);
+    return { ...fromLocal, source: 'fallback' };
   }
-  return { products: local.map(normalizeProduct).filter(product => product.status === 'active'), localRaw: local };
 }
 
 function copy(from, to) {
@@ -73,7 +83,7 @@ function write(file, content) {
   fs.writeFileSync(target, content);
 }
 
-const { products, localRaw } = await loadCatalog();
+const { products, localRaw, source } = await loadCatalog();
 const now = new Date();
 
 fs.rmSync(dist, { recursive: true, force: true });
@@ -87,7 +97,8 @@ copy('js');
 copy('admin');
 copy('config/site.js');
 write('config/runtime.js', `// Gerado por scripts/build.js — não editar.\nexport const RUNTIME_CONFIG = Object.freeze(${JSON.stringify(runtime, null, 2)});\n`);
-write('data/products.json', `${JSON.stringify(localRaw, null, 2)}\n`);
+// Só os produtos ativos: rascunhos e arquivados nunca ficam públicos.
+write('data/products.json', `${JSON.stringify(localRaw.filter(product => product.status === 'active'), null, 2)}\n`);
 
 // Árvore de imports estáticos de cada entrada → <link rel="modulepreload"> (evita a cascata de pedidos).
 function moduleGraph(entry, seen = new Set()) {
@@ -144,4 +155,5 @@ write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="htt
   .map(url => `  <url><loc>${SITE_CONFIG.siteUrl}${url === '/' ? '/' : url}</loc></url>`).join('\n')}\n</urlset>\n`);
 
 console.log(`✓ dist/ gerado — ${pages.length} páginas indexáveis, ${products.length} produtos${demo ? ' (MODO DEMONSTRAÇÃO)' : ''}`);
-console.log(`  Modo: ${runtime.supabaseUrl && runtime.supabaseAnonKey ? 'Supabase' : 'local (sem backend)'} · WhatsApp: ${whatsappNumber}`);
+const MODES = { supabase: 'Supabase', fallback: 'Supabase (páginas estáticas de data/products.json — Supabase inacessível no build)', local: 'local (sem backend)' };
+console.log(`  Modo: ${MODES[source]} · WhatsApp: ${whatsappNumber}`);

@@ -71,7 +71,8 @@ export async function init() {
 
   function apply({ animate = true } = {}) {
     const filtered = sortProducts(filterProducts(products, state), state.sort);
-    const html = productGridHTML(filtered, { eager: true });
+    // h2: os cartões ficam logo sob o h1 "Coleção." (igual ao HTML gerado no build).
+    const html = productGridHTML(filtered, { eager: true, heading: 'h2' });
     if (html !== lastRendered) {
       grid.innerHTML = html;
       if (!animate) grid.querySelectorAll('.product-card').forEach(card => { card.style.animation = 'none'; });
@@ -113,7 +114,11 @@ export async function init() {
   controls().q.addEventListener('search', event => update({ q: event.target.value.trim() }));
   for (const key of ['size', 'availability', 'price']) controls()[key].addEventListener('change', event => update({ [key]: event.target.value }));
   controls().sort.addEventListener('change', event => update({ sort: event.target.value }));
-  on(document, 'click', '[data-clear-filters]', () => clearAll());
+  on(document, 'click', '[data-clear-filters]', (event, button) => {
+    clearAll();
+    // O botão usado pode ter ficado escondido (já não há filtros): o foco passa para "Todos" em vez de cair no <body>.
+    if (button.closest('[hidden]')) $('[data-category=""]', root)?.focus();
+  });
 
   // Mobile: os mesmos controlos são movidos para uma gaveta nativa (sem duplicar estado).
   $('[data-filters-open]', root)?.addEventListener('click', () => {

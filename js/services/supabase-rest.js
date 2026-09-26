@@ -45,4 +45,4 @@ export async function supabaseRequest(path, { method = 'GET', body, headers = {}
   }
 }
 
-export const supabaseRpc = (fn, args) => supabaseRequest(`rpc/${fn}`, { method: 'POST', body: args });
+export const supabaseRpc = (fn, args, { timeout } = {}) => supabaseRequest(`rpc/${fn}`, { method: 'POST', body: args, timeout });

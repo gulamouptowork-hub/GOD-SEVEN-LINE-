@@ -30,13 +30,14 @@ export function buildOrderMessage(order, { demo = false } = {}) {
   return lines.join('\n');
 }
 
-export function buildInquiryMessage({ productName, color, size } = {}) {
+// priced: a peça já mostra preço no site, por isso só se pergunta a disponibilidade.
+export function buildInquiryMessage({ productName, color, size, priced = false } = {}) {
   const details = [color && `Cor: ${color}`, size && `Tamanho: ${size}`].filter(Boolean).join(' · ');
   return [
     'Olá! 👋',
     `Tenho interesse na peça ${productName} — ${SITE_CONFIG.brandName}.`,
     details,
-    'Podem confirmar o preço e a disponibilidade?'
+    priced ? 'Podem confirmar a disponibilidade?' : 'Podem confirmar o preço e a disponibilidade?'
   ].filter(Boolean).join('\n');
 }
 

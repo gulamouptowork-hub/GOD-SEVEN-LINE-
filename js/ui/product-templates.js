@@ -2,7 +2,7 @@
 import { SITE_CONFIG, categoryLabel } from '../../config/site.js';
 import {
   imagesForColor, isVariantPurchasable, productAvailability, productColors, productHasSizes,
-  productPriceLabel, variantPrice, variantStatus, variantsForColor
+  productPriceLabel, productPriceRange, variantPrice, variantStatus, variantsForColor
 } from '../lib/catalog.js';
 import { formatPrice } from '../lib/format.js';
 import { escapeHTML } from '../lib/html.js';
@@ -19,6 +19,18 @@ export function initialSelection(product) {
   const variants = color ? variantsForColor(product, color) : [];
   const single = variants.length === 1 && !variants[0].size ? variants[0] : null;
   return { color, variantId: single && isVariantPurchasable(product, single) ? single.id : null, quantity: 1 };
+}
+
+// Seleção ao hidratar: mantém a escolha do HTML estático, exceto uma cor que entretanto ficou sem stock
+// (o stock muda no /admin sem novo build) — aí fica a primeira cor com stock de initialSelection.
+export function restoreSelection(product, { color, variantId } = {}) {
+  const base = initialSelection(product);
+  const colors = productColors(product);
+  const kept = colors.find(item => item.name === color);
+  if (kept && (kept.available || !colors.some(item => item.available))) base.color = kept.name;
+  const variant = product.variants.find(item => item.id === variantId && item.color === base.color);
+  if (variant && isVariantPurchasable(product, variant)) base.variantId = variant.id;
+  return base;
 }
 
 export function galleryHTML(product, color) {
@@ -68,6 +80,8 @@ function sizeState(product, variant, forInquiry) {
   return { disabled: false, note: '' };
 }
 
+const STOCK_MESSAGE = '<p class="option-message" data-stock-message aria-live="polite"></p>';
+
 export function sizesHTML(product, selection, { forInquiry = false } = {}) {
   if (!productHasSizes(product)) return '';
   const variants = selection.color ? variantsForColor(product, selection.color) : [];
@@ -81,9 +95,22 @@ export function sizesHTML(product, selection, { forInquiry = false } = {}) {
       </label>`;
     }).join('')}
     </div>
-    ${forInquiry ? '' : '<p class="option-message" data-stock-message aria-live="polite"></p>'}
+    ${forInquiry ? '' : STOCK_MESSAGE}
   </fieldset>`;
 }
+
+// Cor sem nenhuma variante vendável: o botão fica desativado e diz porquê. null = há o que comprar.
+export function colorBlock(product, color) {
+  const variants = variantsForColor(product, color);
+  if (variants.some(variant => isVariantPurchasable(product, variant))) return null;
+  const subject = productColors(product).length > 1 ? 'Esta cor' : 'Esta peça';
+  return variants.some(variant => variantStatus(product, variant) === 'soldout')
+    ? { label: 'ESGOTADO', message: `${subject} está esgotada.` }
+    : { label: 'INDISPONÍVEL', message: `${subject} está indisponível.` };
+}
+
+// "deste tamanho" só faz sentido quando a peça tem tamanhos.
+export const unitsScope = product => (productHasSizes(product) ? 'deste tamanho' : 'desta peça');
 
 export function stockMessage(product, variant) {
   if (!variant) return productHasSizes(product) ? 'Seleciona um tamanho.' : '';
@@ -104,13 +131,14 @@ export function unitPriceLabel(product, selection) {
   return price !== null ? formatPrice(price) : productPriceLabel(product);
 }
 
+// method="dialog": fora de um <dialog> o envio nativo não faz nada, por isso um toque antes de o JS
+// carregar não recarrega a página nem perde a escolha (o listener continua a receber o submit).
 function purchaseFormHTML(product, selection) {
   const variant = selectedVariant(product, selection);
-  const { state } = productAvailability(product);
-  const soldout = state === 'soldout';
+  const block = colorBlock(product, selection.color);
   const max = variant && Number.isInteger(variant.stock) ? variant.stock : 1;
   const price = variant ? variantPrice(product, variant) : null;
-  return `<form class="purchase-form" data-purchase-form novalidate>
+  return `<form class="purchase-form" data-purchase-form method="dialog" novalidate>
     ${colorsHTML(product, selection)}
     ${sizesHTML(product, selection)}
     <div class="quantity-field">
@@ -118,29 +146,36 @@ function purchaseFormHTML(product, selection) {
       <div class="quantity-field__row">
         <div class="stepper" role="group" aria-labelledby="quantity-label">
           <button type="button" data-qty-dec aria-label="Diminuir quantidade"${selection.quantity <= 1 ? ' disabled' : ''}>${icon('minus')}</button>
-          <input type="number" name="quantity" value="${selection.quantity}" min="1" max="${max}" step="1" inputmode="numeric" data-qty-input aria-labelledby="quantity-label"${soldout ? ' disabled' : ''}>
+          <input type="number" name="quantity" value="${selection.quantity}" min="1" max="${max}" step="1" inputmode="numeric" data-qty-input aria-labelledby="quantity-label"${block ? ' disabled' : ''}>
           <button type="button" data-qty-inc aria-label="Aumentar quantidade"${!variant || selection.quantity >= max ? ' disabled' : ''}>${icon('plus')}</button>
         </div>
         <p class="quantity-field__subtotal" data-line-subtotal${price === null ? ' hidden' : ''}>Subtotal <strong>${price === null ? '' : formatPrice(price * selection.quantity)}</strong></p>
       </div>
+      ${productHasSizes(product) ? '' : STOCK_MESSAGE}
     </div>
     <p class="form-error" data-purchase-error role="alert"></p>
-    <button type="submit" class="button button--block add-button" data-add-button${soldout ? ' disabled' : ''}>
-      <span data-add-label>${soldout ? 'ESGOTADO' : 'ADICIONAR AO PEDIDO'}</span>${soldout ? '' : icon('arrow')}
+    <button type="submit" class="button button--block add-button" data-add-button${block ? ' disabled' : ''}>
+      <span data-add-label>${block ? block.label : 'ADICIONAR AO PEDIDO'}</span>${block ? '' : icon('arrow')}
     </button>
   </form>`;
 }
 
+// Com preço publicado (mas sem stock) não se diz que falta o preço.
+const isPriced = product => productPriceRange(product) !== null;
+
 function inquiryHTML(product, selection, whatsappURL) {
   const custom = product.orderMode === 'custom';
+  const priced = isPriced(product);
   return `<form class="purchase-form purchase-form--inquiry" data-inquiry-form>
     ${custom ? '' : colorsHTML(product, selection, { forInquiry: true })}
     ${custom ? '' : sizesHTML(product, selection, { forInquiry: true })}
     <div class="inquiry-note">
-      <strong>${custom ? 'Peça feita à tua medida.' : 'Preço e disponibilidade por confirmar.'}</strong>
+      <strong>${custom ? 'Peça feita à tua medida.' : priced ? 'Disponibilidade por confirmar.' : 'Preço e disponibilidade por confirmar.'}</strong>
       <p>${custom
         ? 'Conta-nos a tua ideia: combinamos a peça, a técnica, o preço e o prazo contigo pelo WhatsApp.'
-        : 'Esta peça ainda não tem preço e stock publicados. Pergunta-nos pelo WhatsApp e confirmamos contigo.'}</p>
+        : priced
+          ? 'O stock desta peça ainda não está publicado. Pergunta-nos pelo WhatsApp e confirmamos contigo.'
+          : 'Esta peça ainda não tem preço e stock publicados. Pergunta-nos pelo WhatsApp e confirmamos contigo.'}</p>
     </div>
     <a class="button button--block button--whatsapp" data-inquiry-link href="${escapeHTML(whatsappURL)}" target="_blank" rel="noopener">
       ${icon('whatsapp')}<span>${custom ? 'PERSONALIZAR NO WHATSAPP' : 'PERGUNTAR NO WHATSAPP'}</span>
@@ -149,11 +184,27 @@ function inquiryHTML(product, selection, whatsappURL) {
   </form>`;
 }
 
+const isInquiry = product => ['custom', 'unconfigured', 'unavailable'].includes(productAvailability(product).state);
+
 export function purchaseHTML(product, selection, { inquiryURL = '' } = {}) {
-  const { state } = productAvailability(product);
-  return ['custom', 'unconfigured', 'unavailable'].includes(state)
+  return isInquiry(product)
     ? inquiryHTML(product, selection, inquiryURL)
     : purchaseFormHTML(product, selection);
+}
+
+// Dados para a mensagem de interesse no WhatsApp (ver buildInquiryMessage).
+export function inquiryDetails(product, selection) {
+  return { productName: product.name, color: selection.color, size: selectedVariant(product, selection)?.size, priced: isPriced(product) };
+}
+
+// Passos de "Como funciona o pedido": só se fala do pedido quando a peça se pode juntar ao pedido.
+export function howtoStepsHTML(product) {
+  const steps = product.orderMode === 'custom'
+    ? ['Partilha a tua ideia pelo WhatsApp: imagem, frase ou referência.', 'Combinamos contigo a peça, a técnica, o preço e o prazo.', 'Aprovas a proposta e criamos a tua peça.']
+    : isInquiry(product)
+      ? ['Escolhe a cor e o tamanho.', 'Pergunta-nos pelo <strong>WhatsApp</strong>.', `Confirmamos contigo ${isPriced(product) ? 'a disponibilidade' : 'o preço, a disponibilidade'} e a entrega.`]
+      : ['Escolhe a cor, o tamanho e a quantidade.', 'Junta as peças no <strong>teu pedido</strong> e revê tudo.', 'Envia pelo WhatsApp: confirmamos a disponibilidade e a entrega contigo.'];
+  return steps.map(step => `<li>${step}</li>`).join('');
 }
 
 export function productHeaderHTML(product, selection) {

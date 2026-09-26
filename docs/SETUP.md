@@ -16,13 +16,17 @@ Em ambos os modos o pedido termina no WhatsApp da loja.
 
 ## 1. Correr o site no computador
 
-Precisas do [Node.js](https://nodejs.org) 20 ou mais recente (o projeto foi testado com o Node 24).
+Precisas do [Node.js](https://nodejs.org) 22 ou mais recente (o projeto foi testado com o Node 24).
 
 ```bash
 npm run build      # gera o site em dist/
 npm run dev        # build + servidor local → http://localhost:4173
 npm test           # corre os testes automáticos
 ```
+
+O servidor local só responde neste computador. Para abrir o site no telemóvel (na mesma rede Wi-Fi), usa
+`HOST=0.0.0.0 npm run serve` (PowerShell: `$env:HOST = "0.0.0.0"; npm run serve`) e abre
+`http://<IP-do-computador>:4173`.
 
 ### Modo demonstração (preços FICTÍCIOS)
 
@@ -198,6 +202,16 @@ O `vercel.json` já define o comando de build (`npm run build`) e a pasta public
 
 No fim do build, o log indica o modo: `Modo: Supabase` ou `Modo: local (sem backend)`.
 
+Com o Supabase configurado, o build lê o catálogo da base de dados. Se não conseguir (URL ou chave errados,
+`schema.sql` por correr, Supabase em baixo ou sem resposta em 15 segundos), **o build falha** com a mensagem
+`✗ Não foi possível ler o Supabase no build (…)`. Assim a Vercel não publica páginas feitas com dados errados
+e o **último deploy bom continua no ar**. Corrige a causa e faz Redeploy.
+
+Só para testes, `ALLOW_LOCAL_FALLBACK=1` faz o build continuar mesmo assim, com as páginas estáticas feitas a
+partir de `data/products.json`. O log diz então
+`Modo: Supabase (páginas estáticas de data/products.json — Supabase inacessível no build)`.
+Não definas esta variável na Vercel.
+
 ---
 
 ## 5. Número do WhatsApp
@@ -209,8 +223,9 @@ Os pedidos e os botões WhatsApp usam o número **+258 87 020 4282** (já usado 
 - **Mudar sem mexer no código:** define `WHATSAPP_NUMBER` na Vercel e faz Redeploy. Isto muda o número
   para onde vão os pedidos e os links WhatsApp; o número escrito (`phoneDisplay`) continua o de `config/site.js`.
 
-> Uma das imagens originais mostra outro número (**84 060 8723**). O site mantém o número já configurado
-> (+258 87 020 4282) até o dono confirmar qual é o correto.
+> Algumas fotografias originais mostram outro número (**84 060 8723**) e a conta `@god_7line`. As imagens
+> publicadas são recortadas sem essa faixa (`scripts/optimize-images.js`), e o site mantém o número já
+> configurado (+258 87 020 4282) até o dono confirmar qual é o correto.
 
 ---
 
@@ -232,12 +247,42 @@ servidor** o preço, o stock e se a peça está ativa (preços enviados pelo bro
 mudou entretanto, o cliente é avisado antes de abrir o WhatsApp. O stock **não é descontado
 automaticamente**: quando confirmares um pedido, ajusta o stock no admin.
 
-### Páginas dos produtos e SEO
+### Páginas dos produtos e SEO: o que muda logo e o que precisa de Redeploy
 
-As páginas de produto são geradas no build. Um produto criado no admin aparece **logo** no catálogo e em
-`/produtos/<slug>` (a página é montada no browser a partir da base de dados). No **próximo deploy** passa a
-ter uma página completa pré-gerada, melhor para o Google e para pré-visualizações no WhatsApp. Para a gerar
-já: Vercel → **Deployments → ⋯ → Redeploy**.
+As páginas são HTML gerado no build (com o catálogo lido do Supabase nesse momento). No browser, o JavaScript
+volta **sempre** a ler a base de dados, por isso para quem visita a loja as alterações do `/admin` valem logo:
+
+| Muda **logo** (sem deploy) | Só muda no **próximo deploy** |
+|---|---|
+| Preço, stock, imagens, tamanhos e estado mostrados na página, no catálogo e no NEW DROP (depois de a página carregar) | O HTML estático que o Google e as pré-visualizações do WhatsApp/Facebook leem (não correm JavaScript) |
+| O que se pode pôr no pedido e a validação no checkout (`create_order` verifica preço e stock no servidor) | Título, descrição e imagem de partilha (`og:*`) de cada página — ex.: a descrição continua a dizer "Preço sob consulta" depois de pores um preço |
+| Produto novo: abre em `/produtos/<slug>` pela página genérica `/produto` (montada no browser, `noindex`, título genérico nas pré-visualizações) | Dados estruturados do Google (preço e disponibilidade no JSON-LD) e `product:price` |
+| Produto passado a rascunho/arquivado: a página mostra "Peça não encontrada" | `sitemap.xml` e a lista de páginas `/produtos/<slug>` pré-geradas (uma peça retirada continua no sitemap) |
+
+Por isso, depois de mudares preços, stock, imagens, estados ou de criares peças, faz **Deployments → ⋯ →
+Redeploy** na Vercel (1–2 minutos). Se o build falhar (secção 4), o site anterior continua publicado.
+
+#### Automatizar o Redeploy (recomendado)
+
+Para não depender de te lembrares, liga um **Deploy Hook** da Vercel a um **Database Webhook** do Supabase.
+Cada alteração a produtos, imagens ou variantes passa a publicar o site sozinha.
+
+1. **Vercel → Project → Settings → Git → Deploy Hooks**: nome `supabase-produtos`, branch `main` →
+   **Create Hook**. Copia o URL (`https://api.vercel.com/v1/integrations/deploy/…`).
+   Trata-o como uma palavra-passe: quem o tiver pode lançar deploys. **Não** o ponhas no código, no git
+   nem nas variáveis da Vercel.
+2. **Supabase → Database → Webhooks → Create a new hook** (se pedir, ativa primeiro os webhooks):
+   - Name: `redeploy-loja`
+   - Table: `products`; Events: **Insert**, **Update** e **Delete**
+   - Type: **HTTP Request**, Method **POST**, URL: o Deploy Hook do passo 1 (sem headers nem parâmetros)
+   - **Create webhook**.
+3. Repete o passo 2 para as tabelas `product_variants` e `product_images` (mesmo URL).
+4. Testa: muda o stock de uma variante no `/admin` e confirma que aparece um deploy novo em
+   **Vercel → Deployments**.
+
+Notas: cada gravação no admin pode lançar vários deploys seguidos (produto, imagens e variantes); a Vercel
+publica-os por ordem e o último fica no ar. Os webhooks não se aplicam a `orders`, por isso os pedidos
+nunca lançam deploys.
 
 ---
 
@@ -254,6 +299,9 @@ gerados a partir dos originais:
    ```bash
    npm i --no-save sharp && npm run images
    ```
+
+   Para refazer só algumas imagens (as outras, os ícones e o manifest ficam como estão):
+   `npm run images -- tee-verde-costas tee-verde-detalhe`.
 
 4. Usa a chave em `data/products.json` (`images[].src`) ou no admin, e faz commit de `assets/images/` e
    `js/lib/image-manifest.js`.
@@ -285,4 +333,6 @@ Nada disto foi inventado no site — está à espera de confirmação do dono:
 | O checkout diz que uma peça já não está disponível | O produto deixou de estar ativo, passou a personalização, ou perdeu preço/stock. |
 | No admin: "Sem permissão" ou lista de pedidos vazia | O utilizador não está em `admin_users` (passo 3.6). |
 | O log da Vercel diz `Modo: local` | Faltam `SUPABASE_URL`/`SUPABASE_ANON_KEY` ou não foi feito Redeploy depois de as definir. |
+| O build falha com `Não foi possível ler o Supabase no build` | URL ou chave errados (`HTTP 401`), `schema.sql` por correr (`HTTP 404`) ou Supabase sem resposta. O site anterior continua publicado; corrige e faz Redeploy (secção 4). |
+| Uma partilha no WhatsApp ou o Google mostram preço/stock antigos | Falta um Redeploy depois da alteração no admin (secção 6). |
 | Carregar imagem falha com "bucket not found" | O `schema.sql` não foi corrido até ao fim. |

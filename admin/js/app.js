@@ -7,6 +7,7 @@ import { escapeHTML } from '/js/lib/html.js';
 import { authErrorMessage, dbErrorMessage } from './logic.js';
 import { createApi } from './api.js';
 import { mountShell } from './shell.js';
+import { NO_TRACK_KEY } from './visitors.js';
 
 const SUPABASE_ESM = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/+esm';
 const root = document.getElementById('app');
@@ -178,6 +179,8 @@ async function start() {
         return;
       }
       verifiedUserId = userId;
+      // Quem gere a loja não conta nas estatísticas (pode mudar em Visitantes → Privacidade).
+      try { if (localStorage.getItem(NO_TRACK_KEY) === null) localStorage.setItem(NO_TRACK_KEY, '1'); } catch { /* sem armazenamento */ }
       shell = mountShell(root, {
         api,
         email: session.user.email ?? '',

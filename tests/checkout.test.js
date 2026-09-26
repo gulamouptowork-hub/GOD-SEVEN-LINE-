@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { createLocalOrderNumber, formatOrderNumber, isLocalOrderNumber } from '../js/lib/order-number.js';
 import { formatPhone, isValidPhone, validateCustomer, whatsappDigits } from '../js/lib/validation.js';
 import { buildInquiryMessage, buildOrderMessage, buildWhatsAppURL } from '../js/lib/whatsapp.js';
+import { buildOrderDraft, confirmedOrder, createOrderArgs, deliveryFeeFor, orderTotals } from '../js/lib/order.js';
+import { SITE_CONFIG } from '../config/site.js';
 
 test('telefones de Moçambique e internacionais', () => {
   for (const phone of ['84 123 4567', '841234567', '+258 84 123 4567', '00258841234567', '258 87 020 4282', '21 123 456', '+27 82 123 4567', '+351 912 345 678']) {
@@ -79,4 +81,52 @@ test('URL WhatsApp codifica acentos, emoji, quebras de linha e símbolos', () =>
 test('mensagem de interesse para peças sem preço configurado', () => {
   const message = buildInquiryMessage({ productName: 'Polo Seven', color: 'Rosa', size: 'M' });
   assert.ok(message.includes('Polo Seven') && message.includes('Cor: Rosa · Tamanho: M'));
+  assert.ok(message.endsWith('Podem confirmar o preço e a disponibilidade?'));
+  // Com preço já publicado no site, só se pergunta a disponibilidade.
+  const priced = buildInquiryMessage({ productName: 'Polo Seven', color: 'Rosa', priced: true });
+  assert.ok(priced.endsWith('Podem confirmar a disponibilidade?'));
+  assert.doesNotMatch(priced, /preço/);
+});
+
+const draftItems = [
+  { productId: 'seven-signature', variantId: 'seven-signature-preto-m', name: 'Seven Signature', color: 'Preto', size: 'M', unitPrice: 1250, quantity: 2 },
+  { productId: 'polo-seven', variantId: 'polo-seven-rosa-l', name: 'Polo Seven', color: 'Rosa', size: 'L', unitPrice: 1500, quantity: 1 }
+];
+const draftCustomer = { name: 'João Mussa', phone: '84 123 4567', location: '', deliveryType: 'entrega', notes: '' };
+
+test('taxa de entrega: um só ponto de consulta, null sem taxa configurada', () => {
+  assert.deepEqual(Object.keys(SITE_CONFIG.deliveryFees), [], 'nenhuma taxa inventada na configuração');
+  for (const type of ['entrega', 'levantamento', 'constructor', '__proto__', undefined]) assert.equal(deliveryFeeFor(type), null, String(type));
+  // Valor fictício, só para o teste.
+  const fees = { entrega: 100, levantamento: 0, voo: -5, texto: '100' };
+  assert.equal(deliveryFeeFor('entrega', fees), 100);
+  assert.equal(deliveryFeeFor('levantamento', fees), 0);
+  assert.equal(deliveryFeeFor('voo', fees), null);
+  assert.equal(deliveryFeeFor('texto', fees), null);
+  assert.equal(deliveryFeeFor('toString', fees), null);
+  const draft = buildOrderDraft(draftItems, draftCustomer);
+  assert.equal(draft.deliveryFee, null);
+  assert.equal(draft.total, 4000);
+  assert.equal(createOrderArgs(draft).p_expected_total, 4000);
+});
+
+test('com taxa configurada, resumo, mensagem e servidor dão o mesmo total', () => {
+  const fees = { entrega: 100 }; // valor fictício
+  const draft = buildOrderDraft(draftItems, draftCustomer, { fees });
+  const review = orderTotals(draftItems, draftCustomer.deliveryType, { fees }); // o que o resumo mostra
+  assert.deepEqual({ subtotal: draft.subtotal, deliveryFee: draft.deliveryFee, total: draft.total }, { subtotal: 4000, deliveryFee: 100, total: 4100 });
+  assert.deepEqual({ subtotal: review.subtotal, deliveryFee: review.deliveryFee, total: review.total }, { subtotal: 4000, deliveryFee: 100, total: 4100 });
+  // Levantamento sem taxa configurada: sem linha de entrega.
+  assert.equal(orderTotals(draftItems, 'levantamento', { fees }).total, 4000);
+  // A create_order ainda calcula total = subtotal das peças: é isso que tem de ir em p_expected_total.
+  const args = createOrderArgs(draft);
+  assert.equal(args.p_expected_total, 4000);
+  assert.deepEqual(args.p_customer, { name: 'João Mussa', phone: '84 123 4567', location: null, delivery_type: 'entrega', notes: null });
+  assert.deepEqual(args.p_items, [{ variant_id: 'seven-signature-preto-m', quantity: 2 }, { variant_id: 'polo-seven-rosa-l', quantity: 1 }]);
+  // Resposta do servidor (total sem taxa): o pedido confirmado mantém a taxa e o total do resumo.
+  const order = confirmedOrder(draft, { order_id: 'id-1', order_number: 'GSL-0047', subtotal: 4000, total: 4000, created_at: '2026-09-26T10:00:00Z' });
+  assert.deepEqual({ orderNumber: order.orderNumber, subtotal: order.subtotal, deliveryFee: order.deliveryFee, total: order.total, persistence: order.persistence },
+    { orderNumber: 'GSL-0047', subtotal: 4000, deliveryFee: 100, total: 4100, persistence: 'supabase' });
+  const message = buildOrderMessage(order);
+  for (const line of ['Subtotal: 4.000 MT', 'Entrega: 100 MT', 'TOTAL: 4.100 MT']) assert.ok(message.includes(line), line);
 });

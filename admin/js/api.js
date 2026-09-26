@@ -1,7 +1,7 @@
 // Acesso a dados do painel (supabase-js). As permissões reais são garantidas no servidor por RLS
 // (public.is_admin()); aqui só se lê/escreve com a sessão do administrador e a anon key.
 import { SITE_CONFIG } from '/config/site.js';
-import { ORDERS_PAGE_SIZE, UPLOAD, orderSearchFilter, uploadPath } from './logic.js';
+import { ORDERS_PAGE_SIZE, UPLOAD, orderSearchFilter, unusedStoragePaths, uploadPath } from './logic.js';
 
 export const ORDER_LIST_SELECT = 'id, order_number, customer_name, phone, total, status, created_at, order_items(quantity)';
 const PRODUCT_LIST_SELECT = 'id, slug, name, category, product_type, tag, base_price, status, featured, created_at, product_images(image_url, position), product_variants(stock)';
@@ -48,17 +48,28 @@ export function createApi(supabase) {
         variants().gte('stock', 1).lte('stock', threshold),
         variants().eq('stock', 0),
         variants().is('stock', null),
-        supabase.from('orders').select(ORDER_LIST_SELECT).order('created_at', { ascending: false }).limit(5)
+        supabase.from('orders').select(ORDER_LIST_SELECT).order('created_at', { ascending: false }).limit(5),
+        variants().gt('stock', threshold)
       ]);
       const failed = results.find(result => result.error);
       if (failed) throw failed.error;
-      const [active, fresh, low, out, unknown, recent] = results;
+      const [active, fresh, low, out, unknown, recent, inStock] = results;
       return {
         activeProducts: active.count ?? 0,
         newOrders: fresh.count ?? 0,
-        stock: { low: low.count ?? 0, out: out.count ?? 0, unknown: unknown.count ?? 0 },
+        stock: { in: inStock.count ?? 0, low: low.count ?? 0, out: out.count ?? 0, unknown: unknown.count ?? 0 },
         recentOrders: recent.data ?? []
       };
+    },
+
+    // Pedidos desde uma data (só as colunas dos gráficos do Dashboard).
+    async recentOrderStats(sinceISO) {
+      return unwrap(await supabase.from('orders').select('created_at, total, status').gte('created_at', sinceISO).order('created_at').limit(5000)) ?? [];
+    },
+
+    // ── Estatísticas (supabase/analytics.sql) ──
+    async analyticsReport({ from, to, bucket, timeZone }) {
+      return unwrap(await supabase.rpc('analytics_report', { p_from: from, p_to: to, p_bucket: bucket, p_tz: timeZone }));
     },
 
     // ── Produtos ──
@@ -128,12 +139,22 @@ export function createApi(supabase) {
       if (error) throw error;
     },
 
+    // Remove ficheiros de uma pasta (products/<id>) que já nenhuma imagem de produto usa: um URL carregado num
+    // produto pode ter sido reutilizado noutro ("Adicionar por URL"). Devolve os caminhos removidos.
+    async removeUnusedImageFiles(folder, paths) {
+      if (!paths.length) return [];
+      const rows = unwrap(await supabase.from('product_images').select('image_url').like('image_url', `%/${UPLOAD.bucket}/${folder}/%`));
+      const unused = unusedStoragePaths(paths, (rows ?? []).map(row => row.image_url));
+      await this.removeStorageObjects(unused);
+      return unused;
+    },
+
     async removeProductFolder(productId) {
       const folder = `products/${productId}`;
       const { data, error } = await storage().list(folder, { limit: 1000 });
       if (error) throw error;
       const paths = (data ?? []).filter(item => item.name && item.id !== null).map(item => `${folder}/${item.name}`);
-      if (paths.length) await this.removeStorageObjects(paths);
+      await this.removeUnusedImageFiles(folder, paths);
     },
 
     // ── Stock ──

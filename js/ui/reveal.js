@@ -1,6 +1,8 @@
 import { prefersReducedMotion } from './dom.js';
 
 export function setupReveal(root = document) {
+  // Sinal para o script inline do <head> (scripts/templates/layout.js): sem ele, os blocos .reveal ficam visíveis.
+  document.documentElement.classList.add('reveal-ready');
   const elements = root.querySelectorAll('.reveal:not(.revealed)');
   if (!('IntersectionObserver' in window) || prefersReducedMotion()) {
     elements.forEach(element => element.classList.add('revealed'));

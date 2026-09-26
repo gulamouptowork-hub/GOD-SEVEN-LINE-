@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  categoryFromParam, filterProducts, isNewProduct, productAvailability, productBadge, productColors,
+  categoryFromParam, filterProducts, isNewProduct, normalizeProduct, productAvailability, productBadge, productColors,
   productPriceLabel, sortProducts, validateCatalog, variantPrice, variantStatus, variantsForColor
 } from '../js/lib/catalog.js';
 import { byslug, demoProducts, realProducts, variantOf } from './helpers.js';
@@ -80,6 +80,18 @@ test('filtros: categoria, tamanho, disponibilidade, preço e pesquisa sem acento
   assert.deepEqual(slugs(filterProducts(products, { price: '1000-2000' })), ['polo-seven', 'seven-signature', 'seven-street-tee', 't-shirt-seven']);
   assert.deepEqual(slugs(filterProducts(products, { q: 'personalizacao' })), ['a-tua-estampa']);
   assert.deepEqual(slugs(filterProducts(products, { q: 'polo rosa' })), ['polo-seven']);
+});
+
+test('faixas de preço: preços redondos ficam na faixa do rótulo', () => {
+  const priced = price => normalizeProduct({
+    id: `p${price}`, slug: `p${price}`, name: `P${price}`, category: 'polos', basePrice: price, status: 'active',
+    images: ['a'], variants: [{ id: `p${price}-m`, size: 'M', stock: 3 }]
+  });
+  const products = [0, 999, 1000, 1000.5, 2000, 2001].map(priced);
+  const ids = price => filterProducts(products, { price }).map(product => product.id);
+  assert.deepEqual(ids('ate-1000'), ['p0', 'p999', 'p1000']);
+  assert.deepEqual(ids('1000-2000'), ['p1000.5', 'p2000']);
+  assert.deepEqual(ids('mais-2000'), ['p2001']);
 });
 
 test('ordenação por preço, nome e mais recentes', () => {

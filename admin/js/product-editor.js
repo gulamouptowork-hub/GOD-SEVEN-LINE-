@@ -4,6 +4,7 @@
 import { SITE_CONFIG } from '/config/site.js';
 import { escapeHTML } from '/js/lib/html.js';
 import { resolveImage } from '/js/lib/images.js';
+import { prepareImageUpload } from './image-resize.js';
 import {
   IMAGE_FIELDS, LIMITS, ORDER_MODES, PRODUCT_STATUSES, QUICK_SIZES, STORAGE_CLEANUP_NOTE, VARIANT_FIELDS,
   applyNameChange, applySlugChange, applySyncResult, createKeyFactory, dbErrorMessage, emptyProductForm,
@@ -214,15 +215,18 @@ export function renderProductEditor(ctx) {
     <div data-region></div>`;
   const region = ctx.main.querySelector('[data-region]');
   const makeKey = createKeyFactory('r');
+  // Limpeza ao sair da vista (o editor só é montado depois de o produto carregar).
+  let teardown = null;
+  const cleanup = () => teardown?.();
 
   if (isNew) {
-    mountEditor(ctx, region, emptyProductForm(), { images: [], variants: [] }, makeKey);
-    return;
+    teardown = mountEditor(ctx, region, emptyProductForm(), { images: [], variants: [] }, makeKey);
+    return cleanup;
   }
   const notFound = () => { region.innerHTML = emptyHTML('Produto não encontrado.', '<p><a class="btn" href="#/produtos">Voltar aos produtos</a></p>'); };
   if (!isUuid(ctx.route.id)) {
     notFound();
-    return;
+    return cleanup;
   }
   loadInto(region, {
     load: () => ctx.api.getProduct(ctx.route.id),
@@ -231,12 +235,13 @@ export function renderProductEditor(ctx) {
     errorMessage: error => `Não foi possível carregar o produto. ${dbErrorMessage(error)}`,
     render: row => {
       if (!row) return notFound();
-      mountEditor(ctx, region, productFormFromDb(row, makeKey), {
+      teardown = mountEditor(ctx, region, productFormFromDb(row, makeKey), {
         images: imageRowsFromDb(row.product_images),
         variants: variantRowsFromDb(row.product_variants)
       }, makeKey, row.status);
     }
   });
+  return cleanup;
 }
 
 function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
@@ -249,8 +254,10 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     uploads: 0,
     showErrors: false,
     deleted: false,
+    task: null, // gravação em curso (ou a última)
     sessionUploads: new Set()
   };
+  const folder = `products/${form.id}`;
   ctx.setGuard(() => !state.deleted && (state.uploads > 0 || formSnapshot(state.form) !== state.saved));
 
   region.innerHTML = editorHTML(form);
@@ -290,15 +297,29 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     ctx.setTitle(isNewNow ? 'Novo produto' : `Editar: ${state.form.name.trim() || 'produto'}`);
   }
 
+  // Os botões só são recriados quando a barra muda (produto criado ou arquivado); durante a gravação ficam com
+  // aria-disabled em vez de disabled, para o botão com foco não desaparecer (o foco cairia no <body>).
   function paintActions() {
     const busy = state.saving;
-    const disabled = busy ? ' disabled' : '';
-    actionsEl.innerHTML = state.form.isNew
-      ? `<a class="btn" href="#/produtos">Cancelar</a>
-         <button type="submit" class="btn btn-primary"${disabled}>${busy ? 'A guardar…' : 'Guardar'}</button>`
-      : `<button type="button" class="btn btn-danger-ghost" data-action="delete"${disabled}>Apagar</button>
-         ${state.savedStatus !== 'archived' ? `<button type="button" class="btn" data-action="archive"${disabled}>Arquivar</button>` : ''}
-         <button type="submit" class="btn btn-primary"${disabled}>${busy ? 'A guardar…' : 'Guardar'}</button>`;
+    const layout = state.form.isNew ? 'new' : (state.savedStatus !== 'archived' ? 'edit' : 'archived');
+    if (actionsEl.dataset.layout !== layout) {
+      const focused = actionsEl.contains(document.activeElement) ? document.activeElement : null;
+      actionsEl.dataset.layout = layout;
+      actionsEl.innerHTML = layout === 'new'
+        ? `<a class="btn" href="#/produtos">Cancelar</a>
+           <button type="submit" class="btn btn-primary">Guardar</button>`
+        : `<button type="button" class="btn btn-danger-ghost" data-action="delete">Apagar</button>
+           ${layout === 'edit' ? '<button type="button" class="btn" data-action="archive">Arquivar</button>' : ''}
+           <button type="submit" class="btn btn-primary">Guardar</button>`;
+      // O mesmo botão, se ainda existir (o "Arquivar" desaparece depois de arquivar); senão "Guardar".
+      const action = focused?.dataset.action;
+      if (focused) ((action && actionsEl.querySelector(`[data-action="${action}"]`)) || actionsEl.querySelector('button[type="submit"]')).focus();
+    }
+    for (const button of actionsEl.querySelectorAll('button')) {
+      if (busy) button.setAttribute('aria-disabled', 'true');
+      else button.removeAttribute('aria-disabled');
+    }
+    actionsEl.querySelector('button[type="submit"]').textContent = busy ? 'A guardar…' : 'Guardar';
     formEl.setAttribute('aria-busy', String(busy));
   }
 
@@ -311,6 +332,20 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     imagesEl.innerHTML = images.length
       ? `<ol class="image-list">${images.map((image, index) => imageItemHTML(image, index, images.length)).join('')}</ol>`
       : '<p class="empty-inline">Sem imagens. Adiciona pelo menos uma para o produto ficar bem apresentado na loja.</p>';
+    if (state.showErrors) paintErrors(validateAll());
+  }
+
+  // Acrescenta uma imagem sem redesenhar a lista: um upload pode terminar enquanto se escreve noutra imagem.
+  function appendImage(entry) {
+    state.form = { ...state.form, images: [...state.form.images, entry] };
+    const list = imagesEl.querySelector('.image-list');
+    if (!list) {
+      paintImages();
+      return;
+    }
+    const { images } = state.form;
+    list.lastElementChild.querySelector('[data-action="image-down"]').disabled = false;
+    list.insertAdjacentHTML('beforeend', imageItemHTML(entry, images.length - 1, images.length));
     if (state.showErrors) paintErrors(validateAll());
   }
 
@@ -439,11 +474,16 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
       state.uploads += 1;
       fileStatus.textContent = `A carregar “${file.name}”…`;
       try {
-        const { url } = await ctx.api.uploadImage(state.form.id, file);
+        const prepared = await prepareImageUpload(file);
         if (!ctx.alive()) return;
+        const { path, url } = await ctx.api.uploadImage(state.form.id, prepared);
+        if (!ctx.alive()) {
+          // Saiu-se do editor durante o upload: o ficheiro não ficaria associado a nada.
+          ctx.api.removeStorageObjects([path]).catch(error => console.warn('Limpeza do Storage falhou', error));
+          return;
+        }
         state.sessionUploads.add(url);
-        state.form = { ...state.form, images: [...state.form.images, newImageEntry(makeKey(), { src: url })] };
-        paintImages();
+        appendImage(newImageEntry(makeKey(), { src: url }));
       } catch (error) {
         console.error(error);
         problems.push(`${file.name}: ${dbErrorMessage(error)}`);
@@ -505,15 +545,18 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     return `${count} ${count === 1 ? singular : plural}: ${reasons}`;
   }
 
+  // Só ficheiros da pasta deste produto (products/<id>/); URLs externos e chaves do site ficam de fora.
+  const folderPaths = urls => urls.map(url => storagePathFromPublicUrl(url, ctx.supabaseUrl)).filter(path => path?.startsWith(`${folder}/`));
+
   async function cleanupStorage(removedUrls) {
     const inUse = new Set(state.form.images.map(image => image.src.trim()));
     const orphanUploads = [...state.sessionUploads].filter(url => !inUse.has(url));
-    const folder = `products/${state.form.id}/`;
     const urls = [...new Set([...removedUrls, ...orphanUploads])].filter(url => !inUse.has(url));
-    const paths = urls.map(url => storagePathFromPublicUrl(url, ctx.supabaseUrl)).filter(path => path?.startsWith(folder));
+    const paths = folderPaths(urls);
     if (!paths.length) return '';
     try {
-      await ctx.api.removeStorageObjects(paths);
+      // Ficheiros que outro produto ainda usa (URL reutilizado) não são apagados.
+      await ctx.api.removeUnusedImageFiles(folder, paths);
       for (const url of urls) state.sessionUploads.delete(url);
       return '';
     } catch (error) {
@@ -522,7 +565,13 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
     }
   }
 
-  async function save() {
+  // A gravação em curso fica em state.task: a limpeza ao sair do editor espera por ela.
+  function save() {
+    if (!state.saving) state.task = saveForm();
+    return state.task;
+  }
+
+  async function saveForm() {
     if (state.saving) return;
     if (state.uploads) {
       setStatus('Aguarda que o carregamento das imagens termine.', 'error');
@@ -601,12 +650,14 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
   }
 
   function archive() {
+    if (state.saving) return;
     state.form = { ...state.form, status: 'archived' };
     control('status').value = 'archived';
     save();
   }
 
   async function removeProduct() {
+    if (state.saving) return;
     const name = state.form.name.trim() || 'este produto';
     if (!window.confirm(productDeleteConfirmation(name))) return;
     state.saving = true;
@@ -657,7 +708,7 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
   });
   formEl.addEventListener('click', event => {
     const button = event.target.closest('button[data-action]');
-    if (!button || button.disabled) return;
+    if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return;
     const key = button.closest('[data-key]')?.dataset.key;
     const actions = {
       'image-up': () => moveImage(key, -1),
@@ -687,4 +738,18 @@ function mountEditor(ctx, region, form, original, makeKey, savedStatus = null) {
   paintSlugPreview();
   paintImages();
   paintVariants();
+
+  // Ao sair do editor: apaga do Storage os ficheiros carregados nesta visita que ficaram por associar (ex.: produto
+  // abandonado sem guardar). Espera por uma gravação em curso, para não apagar o que ela está a associar.
+  return async () => {
+    try {
+      await state.task;
+      if (state.deleted) return;
+      const saved = new Set(state.original.images.map(image => image.image_url));
+      const paths = folderPaths([...state.sessionUploads].filter(url => !saved.has(url)));
+      if (paths.length) await ctx.api.removeUnusedImageFiles(folder, paths);
+    } catch (error) {
+      console.warn('Limpeza do Storage falhou', error);
+    }
+  };
 }

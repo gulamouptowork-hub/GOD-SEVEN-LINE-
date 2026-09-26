@@ -7,15 +7,21 @@ import { renderProductEditor } from './product-editor.js';
 import { renderStock } from './stock.js';
 import { renderOrderDetail, renderOrders } from './orders.js';
 import { emptyHTML } from './ui.js';
+import { renderVisitors } from './visitors.js';
 
 const NAV = [
   { section: 'dashboard', href: '#/', label: 'Dashboard' },
+  { section: 'visitantes', href: '#/visitantes', label: 'Visitantes' },
   { section: 'produtos', href: '#/produtos', label: 'Produtos' },
   { section: 'pedidos', href: '#/pedidos', label: 'Pedidos' },
   { section: 'stock', href: '#/stock', label: 'Stock' }
 ];
 
 const UNSAVED_MESSAGE = 'Tens alterações por guardar. Sair desta página sem guardar?';
+
+// Cada entrada do histórico mostrada pelo painel fica com um carimbo crescente (history.state.t). Assim, ao
+// "Cancelar" a confirmação de saída, sabe-se se o utilizador recuou ou avançou e repõe-se a entrada certa.
+let lastStamp = 0;
 
 function renderNotFound(ctx) {
   ctx.setTitle('Página não encontrada');
@@ -31,6 +37,7 @@ const VIEWS = {
   stock: renderStock,
   orders: renderOrders,
   'order-detail': renderOrderDetail,
+  visitors: renderVisitors,
   'not-found': renderNotFound
 };
 
@@ -75,6 +82,7 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
   let guard = null;
   let cleanup = null;
   let currentHash = location.hash || '#/';
+  let currentStamp = 0;
   let carryFlash = null;
   let firstRender = true;
 
@@ -94,6 +102,16 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
     toggle.setAttribute('aria-expanded', String(open));
   }
 
+  function stampEntry() {
+    const stamp = history.state?.t;
+    if (Number.isFinite(stamp)) {
+      currentStamp = stamp;
+      return;
+    }
+    currentStamp = lastStamp = Math.max(Date.now(), lastStamp + 1);
+    history.replaceState({ ...history.state, t: currentStamp }, '');
+  }
+
   function updateNav(section) {
     for (const link of root.querySelectorAll('.nav a[data-section]')) {
       if (link.dataset.section === section) link.setAttribute('aria-current', 'page');
@@ -108,6 +126,7 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
     cleanup = null;
     guard = null;
     currentHash = location.hash || '#/';
+    stampEntry();
     const route = parseRoute(currentHash);
     updateNav(route.section);
     setMenu(false);
@@ -134,7 +153,7 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
       },
       // Troca o endereço sem voltar a desenhar a vista (ex.: produto novo acabou de ser criado).
       replaceRoute: hash => {
-        history.replaceState(null, '', hash);
+        history.replaceState(history.state, '', hash);
         currentHash = hash;
       }
     };
@@ -157,7 +176,10 @@ export function mountShell(root, { api, email, onLogout, supabaseUrl = '' }) {
     const next = location.hash || '#/';
     if (next === currentHash) return;
     if (isDirty() && !window.confirm(UNSAVED_MESSAGE)) {
-      history.replaceState(null, '', currentHash);
+      // Recuou (entrada mais antiga) → avançar de novo. Avançou, ou entrada nova (link, endereço escrito) → recuar.
+      // Não se reescreve nenhuma entrada; o hashchange seguinte volta a currentHash e é ignorado acima.
+      if (history.state?.t < currentStamp) history.forward();
+      else history.back();
       return;
     }
     render();

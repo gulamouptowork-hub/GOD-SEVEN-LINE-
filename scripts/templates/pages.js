@@ -1,13 +1,15 @@
 // Conteúdo das páginas públicas. O texto editorial vem do site original — preservar a voz da marca.
 import { SITE_CONFIG, categoryLabel } from '../../config/site.js';
 import {
-  PRICE_ON_REQUEST, SORT_OPTIONS, productAvailability, productPriceRange, productURL
+  PRICE_ON_REQUEST, SORT_OPTIONS, productAvailability, productPriceRange, productURL, variantPrice, variantStatus
 } from '../../js/lib/catalog.js';
 import { escapeHTML } from '../../js/lib/html.js';
 import { absoluteImageURL, imgHTML } from '../../js/lib/images.js';
 import { buildInquiryMessage, buildWhatsAppURL } from '../../js/lib/whatsapp.js';
 import { categoriesForFilter, icon, productGridHTML } from '../../js/ui/templates.js';
-import { galleryHTML, initialSelection, productHeaderHTML, purchaseHTML } from '../../js/ui/product-templates.js';
+import {
+  galleryHTML, howtoStepsHTML, initialSelection, inquiryDetails, productHeaderHTML, purchaseHTML
+} from '../../js/ui/product-templates.js';
 
 const jsonLD = data => `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`;
 
@@ -95,7 +97,7 @@ export function catalogPage({ products, now }) {
     </div>
   </div>
   <div class="catalog-meta"><p data-result-count aria-live="polite">${products.length} ${products.length === 1 ? 'peça' : 'peças'}</p><button type="button" class="text-button" data-clear-filters hidden>Limpar filtros</button></div>
-  <div class="product-grid catalog-grid" data-catalog-grid>${productGridHTML(products, { now, eager: true })}</div>
+  <div class="product-grid catalog-grid" data-catalog-grid>${productGridHTML(products, { now, eager: true, heading: 'h2' })}</div>
   <div class="catalog-state" data-catalog-empty hidden><span class="catalog-state__mark" aria-hidden="true">7</span><h2>Nenhuma peça encontrada.</h2><p>Experimenta remover um filtro ou procurar outro nome.</p><button type="button" class="button" data-clear-filters>Limpar filtros</button></div>
   <div class="catalog-state" data-catalog-error hidden role="alert"><h2>Não foi possível carregar os produtos.</h2><p>Verifica a tua ligação e tenta novamente.</p><button type="button" class="button" data-retry>Tentar novamente</button></div>
 </section>
@@ -112,26 +114,22 @@ export function catalogPage({ products, now }) {
 function inquiryURL(product, selection, whatsappNumber) {
   const message = product.orderMode === 'custom'
     ? `Olá! 👋\nQuero personalizar: ${product.name} — ${SITE_CONFIG.brandName}.\nA minha ideia é: `
-    : buildInquiryMessage({ productName: product.name, color: selection.color });
+    : buildInquiryMessage(inquiryDetails(product, selection));
   return buildWhatsAppURL(whatsappNumber, message);
 }
+
+// Estado de stock (produto ou variante) → schema.org. Personalização e "por definir" ficam sem availability.
+const AVAILABILITY = { available: 'InStock', low: 'LimitedAvailability', soldout: 'OutOfStock' };
+const schemaAvailability = state => (AVAILABILITY[state] ? `https://schema.org/${AVAILABILITY[state]}` : undefined);
 
 export function productJSONLD(product) {
   const url = `${SITE_CONFIG.siteUrl}${productURL(product)}`;
   const range = productPriceRange(product);
-  const { state } = productAvailability(product);
-  const availability = { available: 'InStock', low: 'LimitedAvailability', soldout: 'OutOfStock' }[state];
   const data = {
     '@context': 'https://schema.org', '@type': 'Product', name: product.name, description: product.description,
     image: product.images.map(image => absoluteImageURL(image.src, SITE_CONFIG.siteUrl)),
     brand: { '@type': 'Brand', name: SITE_CONFIG.brandName }, category: categoryLabel(product.category), url
   };
-  if (range) {
-    data.offers = range.min === range.max
-      ? { '@type': 'Offer', price: range.min, priceCurrency: SITE_CONFIG.currency, url }
-      : { '@type': 'AggregateOffer', lowPrice: range.min, highPrice: range.max, priceCurrency: SITE_CONFIG.currency, url };
-    if (availability) data.offers.availability = `https://schema.org/${availability}`;
-  }
   const breadcrumbs = {
     '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Início', item: `${SITE_CONFIG.siteUrl}/` },
@@ -139,6 +137,18 @@ export function productJSONLD(product) {
       { '@type': 'ListItem', position: 3, name: product.name, item: url }
     ]
   };
+  // Sem preço não há Product: o Google exige offers (ou avaliações) e marcaria a página com erro.
+  if (!range) return jsonLD(breadcrumbs);
+  if (range.min === range.max) {
+    data.offers = { '@type': 'Offer', price: range.min, priceCurrency: SITE_CONFIG.currency, url, availability: schemaAvailability(productAvailability(product).state) };
+  } else {
+    // Preços diferentes: uma Offer por variante com preço (as listagens do Google não aceitam AggregateOffer).
+    data.offers = product.variants.filter(variant => variantPrice(product, variant) !== null).map(variant => ({
+      '@type': 'Offer', name: [variant.color, variant.size].filter(Boolean).join(' / '), sku: variant.sku ?? undefined,
+      price: variantPrice(product, variant), priceCurrency: SITE_CONFIG.currency, url,
+      availability: product.orderMode === 'cart' ? schemaAvailability(variantStatus(product, variant)) : undefined
+    }));
+  }
   return jsonLD(data) + jsonLD(breadcrumbs);
 }
 
@@ -154,6 +164,7 @@ export function productPage({ product, products, now, whatsappNumber }) {
     gallery: galleryHTML(product, selection.color),
     header: productHeaderHTML(product, selection),
     purchase: purchaseHTML(product, selection, { inquiryURL: inquiryURL(product, selection, whatsappNumber) }),
+    howto: howtoStepsHTML(product),
     related: related.length ? productGridHTML(related, { now }) : ''
   });
   const priceMeta = range ? `<meta property="product:price:amount" content="${range.min}"><meta property="product:price:currency" content="${SITE_CONFIG.currency}">` : '';
@@ -161,7 +172,7 @@ export function productPage({ product, products, now, whatsappNumber }) {
   return { body, head: priceMeta + productJSONLD(product), description, image: product.images[0]?.src, ogType: 'product' };
 }
 
-export function productShell({ slug = '', breadcrumb = '', gallery = '', header = '', purchase = '', related = '' }) {
+export function productShell({ slug = '', breadcrumb = '', gallery = '', header = '', purchase = '', howto = '', related = '' }) {
   return `<div class="product-page" data-product-page data-slug="${escapeHTML(slug)}">
   <nav class="breadcrumb" aria-label="Estás aqui"><ol data-breadcrumb><li><a href="/">Início</a></li><li><a href="/produtos">Coleção</a></li>${breadcrumb}</ol></nav>
   <article class="product-detail" data-product-detail>
@@ -173,9 +184,9 @@ export function productShell({ slug = '', breadcrumb = '', gallery = '', header 
         <li>${icon('whatsapp')}<span>Pedido confirmado contigo pelo WhatsApp</span></li>
         <li>${icon('check')}<span>Levantamento na loja ou entrega combinada</span></li>
       </ul>
-      <details class="product-howto">
+      <details class="product-howto" data-howto${howto ? '' : ' hidden'}>
         <summary>Como funciona o pedido</summary>
-        <ol><li>Escolhe a cor, o tamanho e a quantidade.</li><li>Junta as peças no <strong>teu pedido</strong> e revê tudo.</li><li>Envia pelo WhatsApp: confirmamos a disponibilidade e a entrega contigo.</li></ol>
+        <ol>${howto}</ol>
       </details>
     </div>
   </article>
@@ -219,9 +230,13 @@ export function checkoutPage() {
 
 // ---------------------------------------------------------------- Páginas editoriais (conteúdo original)
 
+// O banner (2,5:1) é recortado com object-fit: cover numa caixa de altura fixa (620px no desktop, 360px no
+// telemóvel): a largura pintada é ~altura × 2,5, não a largura da caixa — daí os valores de sizes.
+const SERVICES_BANNER_SIZES = '(min-width: 641px) 1550px, 900px';
+
 export function servicesPage({ whatsappNumber }) {
   const start = buildWhatsAppURL(whatsappNumber, 'Olá, quero personalizar uma peça');
-  const body = `<section class="page-hero split-hero"><div class="page-hero-copy enter"><p class="eyebrow">PERSONALIZA / À TUA MANEIRA</p><h1>A tua ideia.<br><em>A tua peça.</em></h1><p>Transformamos desenhos, frases, marcas e memórias em roupa que só tu podes vestir.</p><a class="button" href="${escapeHTML(start)}" target="_blank" rel="noopener">Começar no WhatsApp <span>↗</span></a></div><div class="page-hero-image">${imgHTML('personalizacao-banner', { alt: 'Exemplos de vestuário que pode ser personalizado', sizes: '(min-width: 641px) 50vw, 100vw', loading: 'eager' })}<span>DA IDEIA À RUA / 01</span></div></section>
+  const body = `<section class="page-hero split-hero"><div class="page-hero-copy enter"><p class="eyebrow">PERSONALIZA / À TUA MANEIRA</p><h1>A tua ideia.<br><em>A tua peça.</em></h1><p>Transformamos desenhos, frases, marcas e memórias em roupa que só tu podes vestir.</p><a class="button" href="${escapeHTML(start)}" target="_blank" rel="noopener">Começar no WhatsApp <span>↗</span></a></div><div class="page-hero-image">${imgHTML('personalizacao-banner', { alt: 'Exemplos de vestuário que pode ser personalizado', sizes: SERVICES_BANNER_SIZES, loading: 'eager', fetchpriority: 'high' })}<span>DA IDEIA À RUA / 01</span></div></section>
 <section class="service-intro section reveal"><div><p class="eyebrow">O QUE PODES CRIAR</p><h2>Sem limites.<br>Só possibilidades.</h2></div><p>Personalizamos t-shirts, polos, hoodies, uniformes e sacolas. Podes trazer uma arte pronta ou apenas uma ideia: ajudamos a escolher a peça, a técnica e a posição que melhor conta a tua história.</p></section>
 <section class="service-cards section"><article class="feature-card reveal"><span>01</span><div class="feature-icon" aria-hidden="true">✦</div><h3>Serigrafia</h3><p>Cores sólidas e alta durabilidade. Ideal para equipas, eventos, marcas e encomendas em quantidade.</p></article><article class="feature-card reveal"><span>02</span><div class="feature-icon" aria-hidden="true">◉</div><h3>Impressão DTF</h3><p>Detalhes nítidos, muitas cores e liberdade criativa. Perfeita para peças únicas e artes complexas.</p></article><article class="feature-card reveal"><span>03</span><div class="feature-icon" aria-hidden="true">↗</div><h3>Apoio criativo</h3><p>Ainda não tens a arte final? Conversamos contigo e encontramos uma solução que funciona na peça.</p></article></section>
 <section class="process section reveal"><p class="eyebrow">SIMPLES DO INÍCIO AO FIM</p><h2>Como funciona.</h2><div class="process-line"><article><b>01</b><h3>Partilha a ideia</h3><p>Envia a imagem, frase, logótipo ou referência pelo WhatsApp.</p></article><article><b>02</b><h3>Escolhe os detalhes</h3><p>Definimos peça, cor, tamanho, quantidade, técnica e prazo.</p></article><article><b>03</b><h3>Aprova e criamos</h3><p>Confirmas a proposta e produzimos tudo com atenção.</p></article><article><b>04</b><h3>Recebe e veste</h3><p>Combinamos o levantamento ou a melhor forma de entrega.</p></article></div></section>
@@ -239,16 +254,18 @@ export function storyPage() {
 
 export function locationPage({ whatsappNumber }) {
   const directions = buildWhatsAppURL(whatsappNumber, 'Olá, preciso de indicações para chegar à loja');
-  const hours = SITE_CONFIG.contact.hours.map(item => `<p><span>${escapeHTML(item.days)}</span><strong>${escapeHTML(item.time)}</strong></p>`).join('');
+  const { contact } = SITE_CONFIG;
+  const hours = contact.hours.map(item => `<p><span>${escapeHTML(item.days)}</span><strong>${escapeHTML(item.time)}</strong></p>`).join('');
+  const addressTitle = escapeHTML(contact.addressTitle ?? `${contact.address}.`).replace(/\n/g, '<br>');
   const body = `<section class="page-hero location-hero"><div class="page-hero-copy enter"><p class="eyebrow">ENCONTRA-NOS / MANHIÇA</p><h1>Vem viver<br><em>a linha.</em></h1><p>Vê as peças de perto, conversa connosco e começa a tua próxima história.</p><a class="button" href="${escapeHTML(directions)}" target="_blank" rel="noopener">Pedir indicações <span>↗</span></a></div><div class="location-art" aria-hidden="true"><span class="map-pin">7</span><div class="road one"></div><div class="road two"></div><p>VILA DA<br><strong>MANHIÇA</strong></p></div></section>
-<section class="visit-grid section reveal"><article><p class="eyebrow">01 / MORADA</p><h2>Em frente ao<br>Millennium BIM.</h2><p>Vila da Manhiça, Moçambique. Procura a identidade God Seven Line.</p></article><article><p class="eyebrow">02 / HORÁRIO</p><div class="hours">${hours}</div></article></section>
+<section class="visit-grid section reveal"><article><p class="eyebrow">01 / MORADA</p><h2>${addressTitle}</h2><p>${escapeHTML(contact.city)}. Procura a identidade God Seven Line.</p></article><article><p class="eyebrow">02 / HORÁRIO</p><div class="hours">${hours}</div></article></section>
 <section class="location-photo reveal">${imgHTML('signature-preto', { alt: 'Comunidade God Seven Line em Moçambique', sizes: '(min-width: 641px) 57vw, 100vw' })}<div><p class="eyebrow">ANTES DE VIRES</p><h2>Confirma a tua visita.</h2><p>Envia uma mensagem para confirmar disponibilidade de peças, tamanhos e atendimento.</p><a class="text-link" href="/contactos">Falar connosco ↗</a></div></section>`;
   return { body };
 }
 
 export function contactPage({ whatsappNumber }) {
   const instagram = SITE_CONFIG.social.instagram;
-  const body = `<section class="sobre-conteudo"><p class="eyebrow">ESTAMOS POR AQUI</p><h1>Vamos conversar.</h1><p class="intro">Uma peça que te chamou a atenção? Uma ideia para personalizar? Fala connosco.</p><div class="contact-grid"><a class="contact-card" href="${escapeHTML(buildWhatsAppURL(whatsappNumber))}" target="_blank" rel="noopener"><span>01 / ENCOMENDAS</span><h2>WhatsApp ↗</h2><p>${escapeHTML(SITE_CONFIG.contact.phoneDisplay)}</p><p>Preços, tamanhos e personalização.</p></a><a class="contact-card" href="${instagram.url}" target="_blank" rel="noopener"><span>02 / COMUNIDADE</span><h2>Instagram ↗</h2><p>${escapeHTML(instagram.handle)}</p><p>Inspiração e novidades da marca.</p></a></div><div class="sobre-bloco"><h2>Vem conhecer-nos.</h2><p>${escapeHTML(SITE_CONFIG.contact.address)}.</p><p>Segunda a Sábado · 08h00 – 17h00</p><a class="text-link" href="/Localizacao">Ver localização ↗</a></div></section>`;
+  const body = `<section class="sobre-conteudo"><p class="eyebrow">ESTAMOS POR AQUI</p><h1>Vamos conversar.</h1><p class="intro">Uma peça que te chamou a atenção? Uma ideia para personalizar? Fala connosco.</p><div class="contact-grid"><a class="contact-card" href="${escapeHTML(buildWhatsAppURL(whatsappNumber))}" target="_blank" rel="noopener"><span>01 / ENCOMENDAS</span><h2>WhatsApp ↗</h2><p>${escapeHTML(SITE_CONFIG.contact.phoneDisplay)}</p><p>Preços, tamanhos e personalização.</p></a><a class="contact-card" href="${instagram.url}" target="_blank" rel="noopener"><span>02 / COMUNIDADE</span><h2>Instagram ↗</h2><p>${escapeHTML(instagram.handle)}</p><p>Inspiração e novidades da marca.</p></a></div><div class="sobre-bloco"><h2>Vem conhecer-nos.</h2><p>${escapeHTML(SITE_CONFIG.contact.address)}.</p><p>${SITE_CONFIG.contact.hours.map(item => `${escapeHTML(item.days)} · ${escapeHTML(item.time)}`).join('<br>')}</p><a class="text-link" href="/Localizacao">Ver localização ↗</a></div></section>`;
   return { body };
 }
 

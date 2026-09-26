@@ -63,7 +63,12 @@ export function createCartStore({ storage = safeStorage(), key = SITE_CONFIG.sto
       products = nextProducts;
       productsLoaded = true;
       const result = reconcileCart(items, products);
-      commit(result.items, 'reconcile', { changes: result.changes });
+      // Só grava se a revalidação mudou o pedido: gravar em cada carregamento dispara 'storage' nos outros
+      // separadores (e repõe, por exemplo, a quantidade que alguém está a escrever na página de produto).
+      const changed = JSON.stringify(result.items) !== JSON.stringify(items);
+      items = result.items;
+      if (changed) write();
+      emit('reconcile', { changes: result.changes });
       return result.changes;
     },
 

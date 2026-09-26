@@ -5,6 +5,7 @@ import {
 } from '../js/lib/cart.js';
 import { buildOrderDraft } from '../js/lib/order.js';
 import { createCartStore } from '../js/store/cart-store.js';
+import { cartLineLabel, emptyOrderHTML } from '../js/ui/templates.js';
 import { byslug, demoProducts, memoryStorage, variantOf } from './helpers.js';
 
 const products = demoProducts();
@@ -93,6 +94,38 @@ test('store persiste entre instâncias (refresh) e revalida ao carregar produtos
   assert.equal(reloaded.getState().totals.subtotal, 2500);
   reloaded.clear();
   assert.equal(createCartStore({ storage, target: null }).getState().totals.quantity, 0);
+});
+
+test('revalidar sem alterações não volta a gravar (não dispara "storage" noutros separadores)', () => {
+  const storage = memoryStorage();
+  const first = createCartStore({ storage, target: null });
+  first.setProducts(products);
+  first.add(signature.id, variantOf(signature, 'Preto', 'M').id, 2);
+  const saved = storage.getItem('gsl-cart-v2');
+  let writes = 0;
+  const spy = { ...storage, setItem: (key, value) => { writes += 1; storage.setItem(key, value); } };
+  const reloaded = createCartStore({ storage: spy, target: null });
+  const reasons = [];
+  reloaded.subscribe((state, detail) => reasons.push(detail.reason));
+  reloaded.setProducts(products);
+  assert.equal(writes, 0);
+  assert.equal(storage.getItem('gsl-cart-v2'), saved);
+  assert.deepEqual(reasons, ['reconcile']);
+  assert.equal(reloaded.productsLoaded, true);
+  // Preço mudou no catálogo → o pedido revalidado é gravado.
+  const updated = demoProducts();
+  byslug(updated, 'seven-signature').basePrice = 1300;
+  variantOf(byslug(updated, 'seven-signature'), 'Preto', 'M').priceOverride = null;
+  reloaded.setProducts(updated);
+  assert.equal(writes, 1);
+  assert.equal(JSON.parse(storage.getItem('gsl-cart-v2')).items[0].unitPrice, 1300);
+});
+
+test('templates do pedido: nível do título do estado vazio e nome completo da linha', () => {
+  assert.ok(emptyOrderHTML().includes('<h3>O teu pedido está vazio.</h3>'));
+  assert.ok(emptyOrderHTML({ heading: 'h2' }).includes('<h2>O teu pedido está vazio.</h2>'));
+  const [line] = add([], polo, 'Rosa', 'L', 1);
+  assert.equal(cartLineLabel(line), 'Polo Seven Rosa / L');
 });
 
 test('rascunho do pedido guarda snapshots e total', () => {

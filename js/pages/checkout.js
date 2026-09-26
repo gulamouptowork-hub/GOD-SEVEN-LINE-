@@ -6,7 +6,7 @@ import { SITE_CONFIG, deliveryOption } from '../../config/site.js';
 import { describeCartChange } from '../lib/cart.js';
 import { formatPrice } from '../lib/format.js';
 import { escapeHTML } from '../lib/html.js';
-import { buildOrderDraft } from '../lib/order.js';
+import { buildOrderDraft, orderTotals } from '../lib/order.js';
 import { DEFAULT_DELIVERY, LIMITS, formatPhone, validateCustomer } from '../lib/validation.js';
 import { buildOrderMessage, buildWhatsAppURL } from '../lib/whatsapp.js';
 import { friendlyOrderError, loadLastOrder, saveLastOrder, submitOrder } from '../services/orders.js';
@@ -18,6 +18,10 @@ import { toast } from '../ui/toast.js';
 
 const STEPS = { details: 1, review: 2, done: 3 };
 const HASH = { details: '#dados', review: '#resumo', done: '#whatsapp' };
+const NOTICE = {
+  load: 'Atualizámos o teu pedido com o stock e os preços atuais:',
+  send: 'Atualizámos o teu pedido antes de enviar:'
+};
 
 function readSession() {
   try { return JSON.parse(sessionStorage.getItem(SITE_CONFIG.storageKeys.checkout) ?? 'null') ?? {}; } catch { return {}; }
@@ -37,7 +41,7 @@ export async function init() {
   let customer = { name: '', phone: '', location: '', deliveryType: DEFAULT_DELIVERY, notes: '', ...(session.customer ?? {}) };
   let step = 'details';
   let sending = false;
-  let notice = [];
+  let notice = { title: NOTICE.send, changes: [] };
 
   // ---------------------------------------------------------------- helpers de UI
   function setStep(next, { push = true } = {}) {
@@ -62,20 +66,37 @@ export async function init() {
   function renderAside({ editable = false } = {}) {
     const state = cart.getState();
     grid.classList.toggle('is-single', false);
-    aside.innerHTML = `<div class="checkout__aside-head"><h2 id="checkout-aside-title">O teu pedido (${state.totals.quantity})</h2><button type="button" class="text-button" data-edit-cart>Editar</button></div>
-      <ul class="cart-lines">${state.items.map(line => cartLineHTML(line, { editable })).join('')}</ul>
-      ${totalsHTML(state.totals)}`;
+    // O cabeçalho (com o botão Editar) só é criado uma vez: redesenhá-lo destruía o elemento que abriu
+    // a gaveta e, ao fechá-la depois de alterar o pedido, o foco perdia-se.
+    if (!$('[data-edit-cart]', aside)) {
+      aside.innerHTML = `<div class="checkout__aside-head"><h2 id="checkout-aside-title"></h2><button type="button" class="text-button" data-edit-cart>Editar</button></div>
+        <ul class="cart-lines" data-checkout-lines></ul>
+        <div data-checkout-totals></div>`;
+    }
+    $('#checkout-aside-title', aside).textContent = `O teu pedido (${state.totals.quantity})`;
+    $('[data-checkout-lines]', aside).innerHTML = state.items.map(line => cartLineHTML(line, { editable })).join('');
+    renderAsideTotals();
   }
 
-  function noticeHTML() {
-    if (!notice.length) return '';
-    return `<div class="review-notice" role="alert"><strong>Atualizámos o teu pedido antes de enviar:</strong><ul>${notice.map(change => `<li>${escapeHTML(describeCartChange(change))}</li>`).join('')}</ul></div>`;
+  // Totais com a taxa da forma de entrega escolhida — os mesmos do rascunho e da mensagem.
+  function renderAsideTotals() {
+    const totals = $('[data-checkout-totals]', aside);
+    if (totals) totals.innerHTML = totalsHTML(orderTotals(cart.getItems(), customer.deliveryType));
+  }
+
+  function setNotice(changes = [], title = NOTICE.send) {
+    notice = { title, changes };
+  }
+
+  function noticeHTML(extraClass = '') {
+    if (!notice.changes.length) return '';
+    return `<div class="review-notice${extraClass ? ` ${extraClass}` : ''}" role="alert"><strong>${notice.title}</strong><ul>${notice.changes.map(change => `<li>${escapeHTML(describeCartChange(change))}</li>`).join('')}</ul></div>`;
   }
 
   function renderEmpty() {
     grid.classList.add('is-single');
     aside.innerHTML = '';
-    main.innerHTML = `<div class="checkout-empty">${emptyOrderHTML()}</div>`;
+    main.innerHTML = `<div class="checkout-empty">${noticeHTML()}${emptyOrderHTML({ heading: 'h2' })}</div>`;
   }
 
   // ---------------------------------------------------------------- 1. Dados
@@ -97,6 +118,7 @@ export async function init() {
       <h2 class="checkout__title">Quase lá.</h2>
       <p class="checkout__lead">Preenche os teus dados para prepararmos a mensagem do teu pedido.</p>
       <form class="checkout-form" data-customer-form novalidate>
+        ${noticeHTML('field--full')}
         <p class="form-error field--full" data-form-error role="alert"></p>
         ${field({ name: 'name', label: 'Nome completo', required: true, autocomplete: 'name', max: LIMITS.name, full: true })}
         ${field({ name: 'phone', label: 'Telefone', required: true, type: 'tel', autocomplete: 'tel', inputmode: 'tel', placeholder: '84 123 4567', hint: 'Número de Moçambique ou internacional com indicativo (ex.: +27…).' })}
@@ -161,7 +183,7 @@ export async function init() {
     writeSession({ step, customer });
     if (!valid) { showErrors(form, errors); return; }
     customer.phone = formatPhone(customer.phone);
-    notice = [];
+    setNotice();
     renderReview();
     setStep('review');
     focusMain();
@@ -171,6 +193,7 @@ export async function init() {
     const form = $('[data-customer-form]', main);
     customer = { ...customer, ...formValues(form) };
     writeSession({ step, customer });
+    renderAsideTotals();
   });
   on(main, 'input', '[data-customer-form] input, [data-customer-form] textarea', (event, input) => {
     customer = { ...customer, [input.name]: input.value };
@@ -216,57 +239,82 @@ export async function init() {
     renderAside();
   }
 
+  // Sem confirmação do servidor o pedido pode já estar gravado: em vez de repetir, falar com a loja.
+  function unconfirmedHTML(failure, draft) {
+    const text = [
+      'Olá! 👋',
+      `Tentei enviar um pedido pelo site da ${SITE_CONFIG.brandName} e não recebi confirmação.`,
+      `Nome: ${draft.customer.name} · Telefone: ${draft.customer.phone}`,
+      `Total: ${formatPrice(draft.total)}`,
+      'Podem confirmar se ficou registado?'
+    ].join('\n');
+    return `${escapeHTML(friendlyOrderError(failure))} <a class="text-link" href="${escapeHTML(buildWhatsAppURL(runtime.whatsappNumber, text))}" target="_blank" rel="noopener">Falar connosco no WhatsApp</a>`;
+  }
+
   async function send(button) {
     if (sending) return;
     sending = true;
-    const error = $('[data-send-error]', main);
-    error.textContent = '';
+    $('[data-send-error]', main).textContent = '';
     button.classList.add('is-loading');
     button.disabled = true;
+    // Dados confirmados no resumo: enquanto se espera pelo servidor o cliente pode voltar ao formulário.
+    const snapshot = { ...customer };
+    // O botão sai do DOM quando o resumo deixa de estar à vista (Voltar, Editar dados, outro passo).
+    const left = () => !button.isConnected;
     // No desktop abre-se já o separador (gesto do utilizador) para não ser bloqueado como pop-up;
     // no telemóvel navega-se no próprio separador para abrir a app do WhatsApp.
     const desktop = !isCoarsePointer();
     let popup = null;
+    let draft = null;
     if (desktop) {
       try { popup = window.open('', '_blank'); } catch { popup = null; }
       if (popup) popup.document.write('<title>A abrir o WhatsApp…</title><p style="font:16px sans-serif;padding:24px">A preparar o teu pedido God Seven Line…</p>');
     }
     try {
       const { changes } = await catalog({ fresh: true });
-      if (!cart.getItems().length) { popup?.close(); renderEmpty(); return; }
+      if (!cart.getItems().length) { popup?.close(); setNotice(changes); renderEmpty(); focusMain(); return; }
+      // Saiu do resumo antes de o pedido ser criado: este envio fica sem efeito.
+      if (left()) { popup?.close(); return; }
       if (changes.length) {
         popup?.close();
-        notice = changes;
+        setNotice(changes);
         renderReview();
         focusMain();
         return;
       }
-      const draft = buildOrderDraft(cart.getItems(), customer);
+      draft = buildOrderDraft(cart.getItems(), snapshot);
       const order = await submitOrder(draft);
+      // A partir daqui o pedido está gravado: conclui mesmo que o cliente tenha saído do resumo entretanto.
       const message = buildOrderMessage(order, { demo: runtime.demo });
       const whatsappUrl = buildWhatsAppURL(runtime.whatsappNumber, message);
-      const record = { ...order, message, whatsappUrl };
+      const record = { ...order, message };
       saveLastOrder(record);
       track('whatsapp_checkout', { orderNumber: order.orderNumber, value: order.total, items: order.quantity, persistence: order.persistence });
       cart.clear();
       renderDone(record);
       setStep('done');
       focusMain();
+      let opened = false;
       if (popup && !popup.closed) {
-        popup.opener = null;
-        popup.location.replace(whatsappUrl);
-      } else if (!desktop) {
-        location.href = whatsappUrl;
+        try { popup.opener = null; popup.location.replace(whatsappUrl); opened = true; } catch { popup.close(); }
       }
+      // Telemóvel, pop-up bloqueado ou separador fechado: abre no próprio separador (o pedido já está gravado).
+      if (!opened) location.href = whatsappUrl;
     } catch (failure) {
       popup?.close();
       if (['STOCK_INSUFFICIENT', 'PRICE_CHANGED', 'PRODUCT_UNAVAILABLE'].includes(failure?.code)) {
-        try { notice = (await catalog({ fresh: true })).changes; } catch { /* mantém o aviso abaixo */ }
+        try { setNotice((await catalog({ fresh: true })).changes); } catch { /* mantém o aviso abaixo */ }
+        if (!cart.getItems().length) { renderEmpty(); return; }
+        if (left()) { toast(friendlyOrderError(failure), { tone: 'error' }); return; }
         renderReview();
         $('[data-send-error]', main).textContent = friendlyOrderError(failure);
         focusMain();
+      } else if (left()) {
+        toast(friendlyOrderError(failure), { tone: 'error' });
+      } else if (failure?.code === 'ORDER_UNCONFIRMED') {
+        $('[data-send-error]', main).innerHTML = unconfirmedHTML(failure, draft);
       } else {
-        error.textContent = `${friendlyOrderError(failure)} Tenta novamente.`;
+        $('[data-send-error]', main).textContent = `${friendlyOrderError(failure)} Tenta novamente.`;
       }
     } finally {
       sending = false;
@@ -287,6 +335,8 @@ export async function init() {
 
   // ---------------------------------------------------------------- 3. WhatsApp
   function renderDone(order) {
+    // O link é sempre reconstruído a partir da mensagem (nunca um URL vindo do storage).
+    const whatsappUrl = buildWhatsAppURL(runtime.whatsappNumber, String(order.message));
     grid.classList.add('is-single');
     aside.innerHTML = '';
     main.innerHTML = `<div class="checkout-success">
@@ -294,7 +344,7 @@ export async function init() {
       <p class="eyebrow">PEDIDO #${escapeHTML(order.orderNumber)}</p>
       <h2 class="checkout__title">Pedido preparado.</h2>
       <p class="checkout__lead">Abrimos o WhatsApp com a mensagem pronta — só falta tocares em <strong>enviar</strong>. Total: <strong>${formatPrice(order.total)}</strong>.</p>
-      <a class="button button--whatsapp" href="${escapeHTML(order.whatsappUrl)}" target="_blank" rel="noopener">${icon('whatsapp')}<span>Abrir WhatsApp</span>${icon('arrow')}</a>
+      <a class="button button--whatsapp" href="${escapeHTML(whatsappUrl)}" target="_blank" rel="noopener">${icon('whatsapp')}<span>Abrir WhatsApp</span>${icon('arrow')}</a>
       <ol class="checkout-success__steps">
         <li>Envia a mensagem no WhatsApp.</li>
         <li>Confirmamos contigo a disponibilidade das peças e a entrega.</li>
@@ -317,7 +367,7 @@ export async function init() {
   function renderStep(target) {
     const hasItems = cart.getItems().length > 0;
     const last = loadLastOrder();
-    if (target === 'done' && last?.whatsappUrl && !hasItems) { renderDone(last); setStep('done', { push: false }); return; }
+    if (target === 'done' && last?.orderNumber && typeof last.message === 'string' && !hasItems) { renderDone(last); setStep('done', { push: false }); return; }
     if (!hasItems) { renderEmpty(); setStep('details', { push: false }); return; }
     if (target === 'review' && validateCustomer(customer).valid) { renderReview(); setStep('review', { push: false }); return; }
     renderDetails();
@@ -332,12 +382,21 @@ export async function init() {
   // Atualiza a lista lateral quando o pedido muda (ex.: editado na gaveta).
   cart.subscribe((state, detail) => {
     if (step === 'done' || detail.reason === 'clear') return;
-    if (!state.items.length) { renderEmpty(); return; }
+    if (!state.items.length) {
+      // Revalidações explicam-se com o aviso (definido por quem pediu o catálogo); remoções do cliente não.
+      if (detail.reason !== 'reconcile') setNotice();
+      renderEmpty();
+      return;
+    }
+    // Voltou a haver peças (ex.: adicionadas noutro separador) enquanto se mostrava o pedido vazio.
+    if ($('.checkout-empty', main)) { renderStep(step === 'review' ? 'review' : 'details'); return; }
     if (aside.innerHTML) renderAside();
   });
 
   try {
-    await catalog();
+    // Peças removidas ou ajustadas ao abrir a página ficam explicadas no próprio passo, não só num toast.
+    const { changes } = await catalog();
+    setNotice(changes, NOTICE.load);
   } catch {
     main.innerHTML = `<div class="catalog-state" role="alert"><h2>Não foi possível carregar os produtos.</h2><p>Precisamos de confirmar preços e stock antes de finalizar.</p><button type="button" class="button" data-reload>Tentar novamente</button></div>`;
     $('[data-reload]', main).addEventListener('click', () => location.reload());

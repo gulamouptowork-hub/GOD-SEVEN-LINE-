@@ -218,7 +218,10 @@ export function filterProducts(products, filters = EMPTY_FILTERS) {
     if (range) {
       const prices = productPriceRange(product);
       if (!prices) return false;
-      if (prices.min < range.min || (range.max !== null && prices.min >= range.max)) return false;
+      // Faixas (min, max]: "Até 1.000" inclui 1.000 (e o 0), "1.000 — 2.000" vai de acima de 1.000 até 2.000,
+      // "Mais de 2.000" é acima de 2.000.
+      const aboveMin = range.min > 0 ? prices.min > range.min : prices.min >= range.min;
+      if (!aboveMin || (range.max !== null && prices.min > range.max)) return false;
     }
     if (tokens.length) {
       const text = productSearchText(product);

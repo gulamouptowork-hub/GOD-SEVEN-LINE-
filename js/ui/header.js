@@ -1,5 +1,5 @@
 import { $ } from './dom.js';
-import { openModal } from './dialogs.js';
+import { closeModal, openModal } from './dialogs.js';
 
 export function setupHeader() {
   const header = $('[data-header]');
@@ -24,5 +24,5 @@ export function setupHeader() {
   });
   menu?.addEventListener('close', () => menuButton?.setAttribute('aria-expanded', 'false'));
   // Ao passar para desktop com o menu aberto, fechá-lo.
-  matchMedia('(min-width: 861px)').addEventListener('change', event => { if (event.matches && menu?.open) menu.close(); });
+  matchMedia('(min-width: 861px)').addEventListener('change', event => { if (event.matches) closeModal(menu); });
 }

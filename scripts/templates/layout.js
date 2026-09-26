@@ -15,6 +15,12 @@ const SECONDARY_NAV = [
   { href: '/contactos', label: 'Contactos' }
 ];
 
+// Classe .js no <html> antes do primeiro paint: só com ela o CSS esconde os blocos .reveal para a animação.
+// Sem JavaScript ou sem módulos (ex.: Opera Mini) não é posta; se o app.js não chegar a correr (falha de rede,
+// erro, browser antigo), é retirada no DOMContentLoaded (setupReveal marca .reveal-ready). O conteúdo fica visível.
+const REVEAL_GATE = "if('noModule'in HTMLScriptElement.prototype)(function(d){d.classList.add('js');"
+  + "addEventListener('DOMContentLoaded',function(){d.classList.contains('reveal-ready')||d.classList.remove('js')})})(document.documentElement)";
+
 const current = (item, page) => (item.page === page || (page === 'product' && item.page === 'catalog') ? ' aria-current="page"' : '');
 
 function header(page) {
@@ -26,7 +32,7 @@ function header(page) {
     <a class="wordmark" href="/" aria-label="God Seven Line — Início">GOD SEVEN<span>LINE®</span></a>
     <nav class="site-nav" aria-label="Navegação principal">${NAV.map(item => `<a href="${item.href}"${current(item, page)}>${item.label}</a>`).join('')}</nav>
     <div class="header-actions">
-      <button class="header-action header-action--search" type="button" data-search-open aria-haspopup="dialog">${icon('search')}<span class="header-action__label">Pesquisa</span></button>
+      <button class="header-action header-action--search" type="button" data-search-open aria-haspopup="dialog" aria-label="Pesquisa">${icon('search')}<span class="header-action__label">Pesquisa</span></button>
       <button class="header-action header-action--order" type="button" data-cart-open aria-haspopup="dialog" aria-label="Abrir o teu pedido, 0 peças" data-cart-button>
         <span class="header-action__label">Pedido</span><span class="order-count">(<span data-cart-count>0</span>)</span>
       </button>
@@ -110,6 +116,7 @@ export function layout({
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>${REVEAL_GATE}</script>
 <title>${escapeHTML(pageTitle)}</title>
 <meta name="description" content="${escapeHTML(desc)}">
 ${noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" href="${escapeHTML(canonical)}">`}

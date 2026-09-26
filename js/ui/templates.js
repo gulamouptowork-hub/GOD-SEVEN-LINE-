@@ -73,12 +73,17 @@ export function productGridHTML(products, options) {
   return products.map((product, index) => productCardHTML(product, { ...options, eager: options?.eager && index < 2 })).join('');
 }
 
+const lineVariant = line => [line.color, line.size || 'Único'].filter(Boolean).join(' / ');
+
+// Nome completo da linha ("Polo Seven Rosa / S") — rótulos acessíveis e anúncios da gaveta.
+export const cartLineLabel = line => `${line.name} ${lineVariant(line)}`;
+
 // Linha do pedido (gaveta e checkout).
 export function cartLineHTML(line, { editable = true, productsLoaded = true } = {}) {
   const url = line.slug ? `/produtos/${encodeURIComponent(line.slug)}` : '/produtos';
-  const variant = [line.color, line.size || 'Único'].filter(Boolean).join(' / ');
+  const variant = lineVariant(line);
   const atMax = line.maxQuantity !== null && line.quantity >= line.maxQuantity;
-  const label = `${line.name} ${variant}`;
+  const label = cartLineLabel(line);
   const controls = editable ? `<div class="cart-line__actions">
       <div class="stepper stepper--sm" role="group" aria-label="${escapeHTML(`Quantidade de ${label}`)}">
         <button type="button" data-line-dec="${escapeHTML(line.variantId)}" aria-label="Diminuir quantidade" ${line.quantity <= 1 || !productsLoaded ? 'disabled' : ''}>${icon('minus')}</button>
@@ -110,10 +115,11 @@ export function totalsHTML(totals) {
   </dl>`;
 }
 
-export function emptyOrderHTML() {
+// heading: 'h3' dentro da gaveta (sob o h2 "O teu pedido"); 'h2' numa página onde fica logo sob o h1.
+export function emptyOrderHTML({ heading = 'h3' } = {}) {
   return `<div class="empty-order">
     <span class="empty-order__mark" aria-hidden="true">7</span>
-    <h3>O teu pedido está vazio.</h3>
+    <${heading}>O teu pedido está vazio.</${heading}>
     <p>Encontra uma peça para começar a tua próxima história.</p>
     <a class="button" href="/produtos">EXPLORAR COLEÇÃO ${icon('arrow')}</a>
   </div>`;

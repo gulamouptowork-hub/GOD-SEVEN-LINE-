@@ -4,7 +4,7 @@ import { swatchColor } from '/js/lib/catalog.js';
 import { escapeHTML } from '/js/lib/html.js';
 import {
   buildStockGroups, collectStockEdits, dbErrorMessage, filterStockGroups, parseWholeNumber, productStatusLabel,
-  sizeLabel, stepStock, stockStatus, stockStatusLabel
+  settleStockEdits, sizeLabel, stepStock, stockStatus, stockStatusLabel
 } from './logic.js';
 import { chipHTML, debounce, emptyHTML, loadInto, optionsHTML, stockTone } from './ui.js';
 
@@ -177,6 +177,8 @@ export function renderStock(ctx) {
     state.saving = true;
     paintSummary();
     setStatus(`A guardar ${plural(changes.length, '1 alteração', '# alterações')}…`);
+    // Os campos continuam editáveis: o que for escrito durante a gravação fica por guardar.
+    const sent = Object.fromEntries(changes.map(change => [change.id, state.raw[change.id]]));
     let result;
     try {
       result = await ctx.api.updateVariantStocks(changes);
@@ -184,10 +186,7 @@ export function renderStock(ctx) {
       result = { saved: [], failed: changes.map(change => ({ ...change, error })) };
     }
     if (!ctx.alive()) return;
-    for (const { id, stock } of result.saved) {
-      state.original[id] = stock;
-      delete state.raw[id];
-    }
+    Object.assign(state, settleStockEdits(state.original, state.raw, sent, result.saved));
     state.saving = false;
     for (const cell of region.querySelectorAll('.stock-cell')) refreshCell(cell);
     paintSummary();

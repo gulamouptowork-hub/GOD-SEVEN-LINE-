@@ -15,7 +15,8 @@ import { showAddedPanel } from '../ui/cart-drawer.js';
 import { $, $$, on } from '../ui/dom.js';
 import { openModal } from '../ui/dialogs.js';
 import {
-  galleryHTML, initialSelection, productHeaderHTML, purchaseHTML, selectedVariant, stockMessage, unitPriceLabel
+  colorBlock, galleryHTML, howtoStepsHTML, inquiryDetails, productHeaderHTML, purchaseHTML, restoreSelection,
+  selectedVariant, stockMessage, unitPriceLabel, unitsScope
 } from '../ui/product-templates.js';
 import { icon, productGridHTML } from '../ui/templates.js';
 import { toast } from '../ui/toast.js';
@@ -27,10 +28,9 @@ function slugFromLocation(page) {
 }
 
 function inquiryURL(product, selection) {
-  const variant = selectedVariant(product, selection);
   const message = product.orderMode === 'custom'
     ? `Olá! 👋\nQuero personalizar: ${product.name} — ${SITE_CONFIG.brandName}.\nA minha ideia é: `
-    : buildInquiryMessage({ productName: product.name, color: selection.color, size: variant?.size });
+    : buildInquiryMessage(inquiryDetails(product, selection));
   return buildWhatsAppURL(runtime.whatsappNumber, message);
 }
 
@@ -52,6 +52,7 @@ export async function init() {
 
   // ---------------------------------------------------------------- render
   function renderPurchase({ focusColor = null } = {}) {
+    clearTimeout(feedbackTimer);
     purchaseRoot.innerHTML = purchaseHTML(product, selection, { inquiryURL: inquiryURL(product, selection) });
     if (focusColor) $(`input[name="color"][value="${CSS.escape(focusColor)}"]`, purchaseRoot)?.focus();
     updateSelectionUI();
@@ -65,6 +66,14 @@ export async function init() {
   const inCart = variant => cart.getItems().find(item => item.variantId === variant?.id)?.quantity ?? 0;
   const available = variant => (variant && Number.isInteger(variant.stock) ? Math.max(variant.stock - inCart(variant), 0) : 0);
 
+  // Desativar o botão que tem o foco atira-o para <body>: passa-o antes para a quantidade.
+  // Só com foco de teclado (:focus-visible) — num toque, focar o campo abria o teclado do telemóvel.
+  const keyboardFocus = element => { try { return element.matches(':focus-visible'); } catch { return false; } };
+  function setDisabled(control, disabled, input) {
+    if (disabled && control === document.activeElement && !input.disabled && keyboardFocus(control)) input.focus({ preventScroll: true });
+    control.disabled = disabled;
+  }
+
   function updateSelectionUI() {
     const price = $('[data-price]', headerRoot);
     if (price) price.textContent = unitPriceLabel(product, selection);
@@ -75,32 +84,33 @@ export async function init() {
     if (inquiry) inquiry.href = inquiryURL(product, selection);
     if (!form) return;
     const variant = selectedVariant(product, selection);
+    const block = colorBlock(product, selection.color);
     const left = available(variant);
     const max = Math.max(left, 1);
     selection.quantity = Math.min(selection.quantity, max);
     const message = $('[data-stock-message]', form);
     if (message) {
-      message.textContent = variant && inCart(variant)
-        ? (left ? `${stockMessage(product, variant)} Já tens ${inCart(variant)} no teu pedido.` : 'Já tens todas as unidades disponíveis deste tamanho no teu pedido.')
-        : stockMessage(product, variant);
+      if (block) message.textContent = block.message;
+      else if (variant && inCart(variant)) message.textContent = left ? `${stockMessage(product, variant)} Já tens ${inCart(variant)} no teu pedido.` : `Já tens todas as unidades disponíveis ${unitsScope(product)} no teu pedido.`;
+      else message.textContent = stockMessage(product, variant);
       message.classList.toggle('is-low', variantStatus(product, variant) === 'low');
       message.classList.remove('is-error');
     }
     $('[data-size-group]', form)?.classList.remove('has-error');
     const input = $('[data-qty-input]', form);
+    input.disabled = Boolean(block);
     input.max = String(max);
     input.value = String(selection.quantity);
-    $('[data-qty-dec]', form).disabled = selection.quantity <= 1;
-    $('[data-qty-inc]', form).disabled = !variant || selection.quantity >= left;
+    setDisabled($('[data-qty-dec]', form), selection.quantity <= 1, input);
+    setDisabled($('[data-qty-inc]', form), !variant || selection.quantity >= left, input);
     const unit = variant ? variantPrice(product, variant) : null;
     const subtotal = $('[data-line-subtotal]', form);
     subtotal.hidden = unit === null;
     if (unit !== null) subtotal.querySelector('strong').textContent = formatPrice(unit * selection.quantity);
     const button = $('[data-add-button]', form);
-    const soldout = product.variants.every(item => !isVariantPurchasable(product, item));
     if (!button.classList.contains('is-added')) {
-      button.disabled = soldout || Boolean(variant && left === 0);
-      $('[data-add-label]', button).textContent = soldout ? 'ESGOTADO' : 'ADICIONAR AO PEDIDO';
+      setDisabled(button, Boolean(block) || Boolean(variant && left === 0), input);
+      $('[data-add-label]', button).textContent = block ? block.label : 'ADICIONAR AO PEDIDO';
     }
     $('[data-purchase-error]', form).textContent = '';
   }
@@ -109,8 +119,9 @@ export async function init() {
     const variant = selectedVariant(product, selection);
     const max = Math.max(available(variant), 1);
     const next = Math.min(Math.max(1, Math.floor(Number(value) || 1)), max);
-    if (Number(value) > max && variant) toast(`Só temos ${max} ${max === 1 ? 'unidade' : 'unidades'} deste tamanho.`);
+    if (Number(value) > max && variant) toast(`Só temos ${max} ${max === 1 ? 'unidade' : 'unidades'} ${unitsScope(product)}.`);
     selection.quantity = next;
+    resetAdded();
     updateSelectionUI();
   }
 
@@ -126,17 +137,26 @@ export async function init() {
     }
   }
 
+  // Durante o feedback o botão fica aria-disabled (sem `disabled`, para não perder o foco):
+  // um duplo clique ou Enter repetido não junta unidades a mais.
   function added(line, quantity) {
     const button = $('[data-add-button]', purchaseRoot);
     clearTimeout(feedbackTimer);
     button.classList.add('is-added');
+    button.setAttribute('aria-disabled', 'true');
     button.innerHTML = `${icon('check')}<span data-add-label>ADICIONADO AO PEDIDO</span>`;
-    feedbackTimer = setTimeout(() => {
-      button.classList.remove('is-added');
-      button.innerHTML = `<span data-add-label>ADICIONAR AO PEDIDO</span>${icon('arrow')}`;
-      updateSelectionUI();
-    }, 2200);
+    feedbackTimer = setTimeout(() => { resetAdded(); updateSelectionUI(); }, 2200);
     showAddedPanel(line, quantity);
+  }
+
+  // Mudar o tamanho ou a quantidade termina o feedback: é uma nova escolha para adicionar.
+  function resetAdded() {
+    clearTimeout(feedbackTimer);
+    const button = $('[data-add-button]', purchaseRoot);
+    if (!button?.classList.contains('is-added')) return;
+    button.classList.remove('is-added');
+    button.removeAttribute('aria-disabled');
+    button.innerHTML = `<span data-add-label>ADICIONAR AO PEDIDO</span>${icon('arrow')}`;
   }
 
   // ---------------------------------------------------------------- eventos
@@ -152,6 +172,7 @@ export async function init() {
     const variant = product.variants.find(item => item.id === input.value);
     selection.variantId = variant?.id ?? null;
     if (variant && Number.isInteger(variant.stock)) selection.quantity = Math.min(selection.quantity, Math.max(variant.stock, 1));
+    resetAdded();
     updateSelectionUI();
     if (variant) track('select_size', { productId: product.id, slug: product.slug, size: variant.size, color: variant.color });
   });
@@ -165,6 +186,7 @@ export async function init() {
   purchaseRoot.addEventListener('submit', event => {
     if (!event.target.matches('[data-purchase-form]')) return;
     event.preventDefault();
+    if ($('[data-add-button]', purchaseRoot)?.classList.contains('is-added')) return;
     if (!cart.productsLoaded) { showError('O catálogo ainda está a carregar. Tenta novamente.'); return; }
     const variant = selectedVariant(product, selection);
     if (!variant) {
@@ -243,13 +265,10 @@ export async function init() {
   }
 
   function readStaticSelection() {
-    const color = $('input[name="color"]:checked', purchaseRoot)?.value;
-    const variantId = $('input[name="variant"]:checked', purchaseRoot)?.value;
-    const base = initialSelection(product);
-    if (color && product.variants.some(variant => variant.color === color)) base.color = color;
-    const variant = product.variants.find(item => item.id === variantId && item.color === base.color);
-    if (variant && isVariantPurchasable(product, variant)) base.variantId = variant.id;
-    return base;
+    return restoreSelection(product, {
+      color: $('input[name="color"]:checked', purchaseRoot)?.value,
+      variantId: $('input[name="variant"]:checked', purchaseRoot)?.value
+    });
   }
 
   async function load() {
@@ -271,6 +290,9 @@ export async function init() {
       headerRoot.innerHTML = productHeaderHTML(product, selection);
       renderGallery();
       renderPurchase();
+      // Os passos dependem do estado vivo da peça (pedido ou pergunta no WhatsApp), não do build.
+      const howto = $('[data-howto]', page);
+      if (howto) { $('ol', howto).innerHTML = howtoStepsHTML(product); howto.hidden = false; }
       const related = products.filter(item => item.id !== product.id && item.category === product.category)
         .concat(products.filter(item => item.id !== product.id && item.category !== product.category && item.featured)).slice(0, 4);
       const relatedSection = $('[data-related]', page);

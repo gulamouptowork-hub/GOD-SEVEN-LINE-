@@ -6,8 +6,8 @@ import {
   compareSizes, createKeyFactory, customerWhatsAppURL, dbErrorMessage, emptyProductForm, filterProductRows,
   filterStockGroups, formSnapshot, generateSizeRows, isUuid, moveItem, newVariantEntry, orderDetailFromDb,
   orderItemCount, orderListRow, orderSearchFilter, parseRoute, parseWholeNumber, planSync, productDeleteConfirmation, productFormFromDb,
-  productListRow, sizeOptions, stepStock, stockStatus, stockStatusLabel, stockSummaryLabel,
-  storagePathFromPublicUrl, summarizeVariantStock, totalStock, uploadPath, uuid, validateImageFile,
+  productListRow, resizePlan, settleStockEdits, sizeOptions, stepStock, stockStatus, stockStatusLabel, stockSummaryLabel,
+  storagePathFromPublicUrl, summarizeVariantStock, totalStock, unusedStoragePaths, uploadPath, uuid, validateImageFile,
   validateImageSource, validateImages, validateProductForm, validateVariants, variantRowsFromDb
 } from '../admin/js/logic.js';
 
@@ -45,6 +45,9 @@ test('parseRoute reconhece todas as rotas do painel', () => {
   assert.equal(parseRoute('#/produtos/novo').name, 'product-new');
   assert.deepEqual({ ...parseRoute(`#/produtos/${PRODUCT_ID}`), query: undefined }, { name: 'product-edit', section: 'produtos', id: PRODUCT_ID, query: undefined });
   assert.equal(parseRoute('#/stock').name, 'stock');
+  assert.equal(parseRoute('#/visitantes').name, 'visitors');
+  assert.equal(parseRoute('#/visitantes?periodo=semanal').query.periodo, 'semanal');
+  assert.equal(parseRoute('#/visitantes/x').name, 'not-found');
   assert.equal(parseRoute('#/pedidos').name, 'orders');
   assert.equal(parseRoute('#/pedidos/abc').id, 'abc');
   assert.equal(parseRoute('#/pedidos/abc').section, 'pedidos');
@@ -131,6 +134,20 @@ test('collectStockEdits devolve só alterações reais e sinaliza inválidos', (
   assert.equal(edits.dirty, true);
   assert.deepEqual(collectStockEdits(original, { a: '05' }), { changes: [], invalid: [], dirty: false });
   assert.deepEqual(collectStockEdits(original, { a: '' }).changes, [{ id: 'a', stock: null }]);
+});
+
+test('settleStockEdits mantém por guardar o que foi alterado durante a gravação', () => {
+  const original = { a: 3, b: null, c: 1 };
+  // Enviados: a = "7" e b = "2". Durante a gravação a passou a "9"; c falhou/não foi enviado.
+  const sent = { a: '7', b: '2' };
+  const next = settleStockEdits(original, { a: '9', b: '2', c: '5' }, sent, [{ id: 'a', stock: 7 }, { id: 'b', stock: 2 }]);
+  assert.deepEqual(next.original, { a: 7, b: 2, c: 1 });
+  assert.deepEqual(next.raw, { a: '9', c: '5' });
+  assert.deepEqual(collectStockEdits(next.original, next.raw).changes, [{ id: 'a', stock: 9 }, { id: 'c', stock: 5 }]);
+  // Voltar ao valor antigo durante a gravação também fica por guardar (a base de dados tem 7).
+  const back = settleStockEdits(original, { a: '3' }, { a: '7' }, [{ id: 'a', stock: 7 }]);
+  assert.deepEqual(collectStockEdits(back.original, back.raw).changes, [{ id: 'a', stock: 3 }]);
+  assert.deepEqual(original, { a: 3, b: null, c: 1 }, 'não altera os objetos recebidos');
 });
 
 test('buildStockGroups agrupa por produto → cor e ordena tamanhos', () => {
@@ -402,6 +419,14 @@ test('uploadPath segue products/<id>/<timestamp>-<nome>.<ext>', () => {
   assert.throws(() => uploadPath(PRODUCT_ID, 'a.gif', 'image/gif'));
 });
 
+test('resizePlan reduz o lado maior até 1600 px e deixa ficheiros já pequenos como estão', () => {
+  assert.deepEqual(resizePlan({ width: 4032, height: 3024, size: 3_500_000 }), { width: 1600, height: 1200 });
+  assert.deepEqual(resizePlan({ width: 3000, height: 4000, size: 200_000 }), { width: 1200, height: 1600 });
+  assert.equal(resizePlan({ width: 1200, height: 900, size: 150_000 }), null, 'pequena em dimensões e peso');
+  assert.deepEqual(resizePlan({ width: 1200, height: 900, size: 2_000_000 }), { width: 1200, height: 900 }, 'pesada: só recodifica');
+  assert.equal(resizePlan({ width: 0, height: 900, size: 1 }), null);
+});
+
 test('storagePathFromPublicUrl só reconhece o bucket product-images do projeto', () => {
   const base = 'https://abc.supabase.co';
   assert.equal(storagePathFromPublicUrl(`${base}/storage/v1/object/public/product-images/products/x/1-a.webp`, base), 'products/x/1-a.webp');
@@ -409,6 +434,21 @@ test('storagePathFromPublicUrl só reconhece o bucket product-images do projeto'
   assert.equal(storagePathFromPublicUrl('https://outro.com/a.webp', base), null);
   assert.equal(storagePathFromPublicUrl('tee-verde-modelo', base), null);
   assert.equal(storagePathFromPublicUrl('x', ''), null);
+});
+
+test('unusedStoragePaths não apaga ficheiros que outro produto ainda usa', () => {
+  const base = 'https://abc.supabase.co/storage/v1';
+  const paths = ['products/x/1-a.webp', 'products/x/2-b.webp', 'products/x/3 c.webp', 'products/x/4-d.webp'];
+  const urls = [
+    `${base}/object/public/product-images/products/x/1-a.webp`,
+    `${base}/object/public/product-images/products/x/3%20c.webp?v=2`,
+    `${base}/render/image/public/product-images/products/x/4-d.webp?width=480`,
+    'tee-verde-modelo',
+    null
+  ];
+  assert.deepEqual(unusedStoragePaths(paths, urls), ['products/x/2-b.webp']);
+  assert.deepEqual(unusedStoragePaths(paths, []), paths);
+  assert.deepEqual(unusedStoragePaths([], urls), []);
 });
 
 // ─── Pedidos ─────────────────────────────────────────────────────────────────
@@ -470,7 +510,13 @@ test('customerWhatsAppURL só existe com telefone válido', () => {
 test('orderSearchFilter gera filtro "or" seguro para o PostgREST', () => {
   assert.equal(orderSearchFilter(''), '');
   assert.equal(orderSearchFilter('  ,() '), '');
-  assert.equal(orderSearchFilter('GSL-0047'), 'order_number.ilike.*GSL-0047*,customer_name.ilike.*GSL-0047*,phone.ilike.*GSL-0047*');
+  assert.equal(orderSearchFilter('GSL-0047'), 'order_number.ilike.*GSL-0047*');
+  // Como aparece no painel e na mensagem do WhatsApp.
+  assert.equal(orderSearchFilter('#GSL-0047'), 'order_number.ilike.*GSL-0047*');
+  assert.equal(orderSearchFilter('Pedido: #GSL-0047'), 'order_number.ilike.*GSL-0047*');
+  assert.equal(orderSearchFilter('gsl-00'), 'order_number.ilike.*gsl-00*');
+  assert.equal(orderSearchFilter('#'), '');
+  assert.equal(orderSearchFilter('#Ana'), 'order_number.ilike.*Ana*,customer_name.ilike.*Ana*,phone.ilike.*Ana*');
   const injected = orderSearchFilter('ana),status.eq.(cancelado');
   assert.ok(!/[()]/.test(injected), 'parênteses removidos');
   assert.equal(injected.split(',').length, 3, 'vírgulas não criam novas condições');
